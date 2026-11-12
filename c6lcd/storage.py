@@ -17,6 +17,10 @@ class Storage:
         """A cold card can need several hundred ms after power-up to answer."""
         import vfs
 
+        if self.bus is None:
+            from shared_spi import SharedSPI
+            self.bus = SharedSPI(sd_only=True)
+
         for attempt in range(attempts):
             if attempt:
                 time.sleep_ms(delay_ms)
@@ -34,6 +38,21 @@ class Storage:
             finally:
                 self.bus.for_lcd()
         return self.mounted
+
+    def load_player(self, lcd, attempts=3):
+        """Use a valid local pack first, without probing an absent SD card."""
+        from pet_player import PetPlayer
+
+        for root in ("/openbuddy", cfg.SD_MOUNT + "/openbuddy"):
+            if root.startswith(cfg.SD_MOUNT + "/"):
+                if not self.mounted and not self.mount(attempts=attempts):
+                    continue
+            player = PetPlayer(lcd, directory=root + "/pets", selection=root + "/active.json")
+            if player.available:
+                player.source = "internal" if root == "/openbuddy" else "sd"
+                return player
+            player.close()
+        return None
 
     def close(self):
         if self.mounted:

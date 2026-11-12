@@ -1,5 +1,9 @@
 # Matériel OpenBuddy
 
+La Waveshare **ESP32-S3-Touch-AMOLED-1.64** dispose aussi d'un profil dedie,
+d'un pilote CO5300 et du stockage des animations en flash interne. Voir
+[installation S3 AMOLED sans microSD](s3-amoled.md), limites et validation comprises.
+
 ## Carte principale
 
 **Waveshare ESP32-C6-LCD-1.47, version non tactile**, écran ST7789 172×320,

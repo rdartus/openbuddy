@@ -161,26 +161,39 @@ def install(args):
     if manifest.get("version") != 1 or manifest.get("format") != "RGB565-BE":
         raise ValueError("Unsupported pack")
     filenames = []
+    sizes = []
+    if not isinstance(manifest["animations"], dict) or not 1 <= len(manifest["animations"]) <= 16:
+        raise ValueError("Invalid animation table")
     for animation in manifest["animations"].values():
         name = animation["file"]
         if not re.fullmatch(r"[a-z0-9-]+\.rgb565", name):
             raise ValueError("Unsafe pack filename")
         path = folder / name
+        if type(animation["bytes"]) is not int or not 0 < animation["bytes"] <= 104 * 104 * 2 * 64:
+            raise ValueError("Invalid animation size: " + name)
         if path.stat().st_size != animation["bytes"]:
             raise ValueError("Size mismatch: " + name)
-        if hashlib.sha256(path.read_bytes()).hexdigest() != animation["sha256"]:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while chunk := handle.read(8192):
+                digest.update(chunk)
+        if digest.hexdigest() != animation["sha256"]:
             raise ValueError("Checksum mismatch: " + name)
         if name not in filenames:
             filenames.append(name)
+            sizes.append(animation["bytes"])
+    sizes.append(manifest_path.stat().st_size)
     root = Path(__file__).resolve().parents[1]
-    target = ":/sd/openbuddy/pets/" + pet_id + "/"
     command = [sys.executable, "-u", "-m", "mpremote", "connect", args.port,
-               "exec", "PACK_ID=%r; REPLACE=%r" % (pet_id, args.replace),
+               "exec", "PACK_ID=%r; REPLACE=%r; STORAGE=%r; PACK_SIZES=%r; MANIFEST_SHA256=%r" % (
+                   pet_id, args.replace, args.storage, sizes,
+                   hashlib.sha256(manifest_path.read_bytes()).hexdigest()),
                "+", "run", str(root / "tools/prepare_pet_sd.py")]
     for name in filenames + ["manifest.json"]:
-        command.extend(["+", "fs", "cp", str(folder / name), target + name])
+        command.extend(["+", "fs", "cp", str(folder / name), ":" + name])
     command.extend(["+", "run", str(root / "tools/verify_pet_sd.py")])
-    print("Installing pack on external SD only; BLE will disconnect during USB transfer.", flush=True)
+    print("Installing pack (%s, %d bytes); BLE will disconnect during USB transfer." % (
+        args.storage, sum(sizes)), flush=True)
     try:
         subprocess.run(command, check=True)
     finally:
@@ -197,9 +210,10 @@ def main():
     conversion.add_argument("--output")
     conversion.add_argument("--frame-ms", type=int)
     conversion.add_argument("--force", action="store_true")
-    installation = commands.add_parser("install", help="Copy and verify a pack on the ESP32 SD via USB")
+    installation = commands.add_parser("install", help="Copy and verify a pack on ESP32 storage via USB")
     installation.add_argument("pack")
-    installation.add_argument("--port", default="COM9")
+    installation.add_argument("--port", default="auto")
+    installation.add_argument("--storage", choices=("auto", "sd", "internal"), default="auto")
     installation.add_argument("--replace", action="store_true", help="Replace an existing OpenBuddy pack")
     args = parser.parse_args()
     try:

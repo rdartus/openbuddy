@@ -6,13 +6,15 @@ import subprocess
 import sys
 
 FILES = ("board_config.py", "shared_spi.py", "sdcard_spi.py", "storage.py",
-         "st7789.py", "buddy_protocol.py", "buddy_ble.py", "buddy_usb.py", "pet_player.py",
+         "st7789.py", "co5300.py", "buddy_protocol.py", "buddy_ble.py", "buddy_usb.py", "pet_player.py",
          "buddy_ui.py", "companion.py", "orientation_demo.py", "main.py")
 
 
 def main():
     parser = argparse.ArgumentParser(description="Deploy OpenBuddy MicroPython files without erasing flash")
     parser.add_argument("--port", default="COM9")
+    parser.add_argument("--board", choices=("waveshare-c6-lcd-147", "waveshare-s3-amoled-164"),
+                        help="Persist a board profile; omitted keeps the current profile (C6 on first install)")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1] / "c6lcd"
     command = [sys.executable, "-u", "-m", "mpremote", "connect", args.port]
@@ -20,6 +22,8 @@ def main():
         if index:
             command.append("+")
         command.extend(["fs", "cp", str(root / name), ":" + name])
+    if args.board:
+        command.extend(["+", "exec", "with open('openbuddy-board.txt', 'w') as f: f.write(%r)" % args.board])
     try:
         subprocess.run(command, check=True)
     except subprocess.CalledProcessError as error:

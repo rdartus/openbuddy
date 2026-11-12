@@ -6,12 +6,16 @@ import board_config as cfg
 
 
 class SharedSPI:
-    def __init__(self):
+    def __init__(self, sd_only=False):
         self.lcd_cs = Pin(cfg.LCD_CS, Pin.OUT, value=1)
         self.sd_cs = Pin(cfg.SD_CS, Pin.OUT, value=1)
-        self.spi = SPI(cfg.LCD_SPI_ID, baudrate=cfg.LCD_SPI_BAUD, polarity=0, phase=0,
-                       sck=Pin(cfg.LCD_SCLK), mosi=Pin(cfg.LCD_MOSI), miso=Pin(cfg.SD_MISO))
-        self.baudrate = cfg.LCD_SPI_BAUD
+        self.sd_only = sd_only
+        self.baudrate = cfg.SD_SPI_BAUD if sd_only else cfg.LCD_SPI_BAUD
+        self.spi = SPI(cfg.SD_SPI_ID if sd_only else cfg.LCD_SPI_ID,
+                       baudrate=self.baudrate, polarity=0, phase=0,
+                       sck=Pin(cfg.SD_SCLK if sd_only else cfg.LCD_SCLK),
+                       mosi=Pin(cfg.SD_MOSI if sd_only else cfg.LCD_MOSI),
+                       miso=Pin(cfg.SD_MISO))
 
     def configure(self, baudrate):
         self.lcd_cs(1)
@@ -21,7 +25,7 @@ class SharedSPI:
             self.baudrate = baudrate
 
     def for_lcd(self):
-        self.configure(cfg.LCD_SPI_BAUD)
+        self.configure(cfg.SD_SPI_BAUD if self.sd_only else cfg.LCD_SPI_BAUD)
 
     def for_sd(self):
         self.configure(cfg.SD_SPI_BAUD)

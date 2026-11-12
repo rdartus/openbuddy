@@ -46,3 +46,26 @@ ORIENTATIONS = {
 }
 ORDER = ("portrait", "landscape", "portrait_inv", "landscape_inv")
 DEFAULT_ORIENTATION = "landscape"
+
+# Explicit board identity: an ESP32-S3 alone does not identify its display wiring.
+BOARD_MODEL = "waveshare-c6-lcd-147"
+DISPLAY_DRIVER = "st7789"
+SD_SPI_ID = LCD_SPI_ID
+SD_SCLK = LCD_SCLK
+SD_MOSI = LCD_MOSI
+try:
+    with open("openbuddy-board.txt") as handle:
+        BOARD_MODEL = handle.read(64).strip()
+except OSError:
+    pass
+if BOARD_MODEL == "waveshare-s3-amoled-164":
+    DISPLAY_DRIVER = "co5300"
+    LCD_SCLK, LCD_MOSI, LCD_CS, LCD_RST = 10, 11, 9, 21
+    LCD_SPI_BAUD = 10_000_000
+    LCD_DC = LCD_BL = RGB_LED = None
+    BOOT_BUTTON = 0
+    SD_SPI_ID = 2
+    SD_SCLK, SD_MOSI, SD_MISO, SD_CS = 41, 39, 40, 38
+    PANEL_SHORT, PANEL_LONG, RAM_SHORT_OFFSET = 280, 456, 20
+elif BOARD_MODEL != "waveshare-c6-lcd-147":
+    raise ValueError("Unknown OpenBuddy board profile: " + BOARD_MODEL)

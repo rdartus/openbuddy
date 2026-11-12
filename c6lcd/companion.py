@@ -5,16 +5,14 @@ import sys
 import time
 
 from machine import Pin
-from neopixel import NeoPixel
 
 import board_config as cfg
 from buddy_ble import BuddyBLE
 from buddy_usb import BuddyUSB
 from buddy_ui import BuddyUI
-from st7789 import LCD, rgb
+from st7789 import rgb
 from shared_spi import SharedSPI
 from storage import Storage
-from pet_player import PetPlayer
 
 
 ORIENTATION_FILE = "openbuddy-orientation.txt"
@@ -43,32 +41,40 @@ def save_orientation(name):
 
 
 def run():
-    bus = SharedSPI()
-    lcd = LCD(load_orientation(), bus=bus)
-    led = NeoPixel(Pin(cfg.RGB_LED), 1)
-    led[0] = (0, 0, 0)
-    led.write()
+    if cfg.DISPLAY_DRIVER == "co5300":
+        from co5300 import LCD
+        bus = None  # The S3 SD slot has its own bus, created only when needed.
+        lcd = LCD(load_orientation())
+    else:
+        from st7789 import LCD
+        bus = SharedSPI()
+        lcd = LCD(load_orientation(), bus=bus)
+    led = None
+    if cfg.RGB_LED is not None:
+        from neopixel import NeoPixel
+        led = NeoPixel(Pin(cfg.RGB_LED), 1)
+        led[0] = (0, 0, 0)
+        led.write()
     buddy = None
     storage = Storage(bus)
     player = None
     ui = None
     try:
-        if storage.mount():
-            player = PetPlayer(lcd)
+        player = storage.load_player(lcd)
 
         def asset_status():
             return {"sd": storage.mounted,
+                    "assets": player.source if player is not None and player.available else None,
                     "pet": player.pet_id if player is not None and player.available else None}
 
         def reload_pet():
             nonlocal player
             try:
-                storage.close()
                 if player is not None:
                     player.close()
-                if storage.mount(attempts=1):
-                    player = PetPlayer(lcd)
-                    ui.player = player
+                storage.close()
+                player = storage.load_player(lcd, attempts=1)
+                ui.player = player
             except OSError as error:
                 print("Pet reload failed:", error)
 
@@ -141,5 +147,6 @@ def run():
         if player is not None:
             player.close()
         storage.close()
-        led[0] = (0, 0, 0)
-        led.write()
+        if led is not None:
+            led[0] = (0, 0, 0)
+            led.write()

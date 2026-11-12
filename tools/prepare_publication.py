@@ -28,7 +28,8 @@ def files():
                 "integration/openbuddy/assets/*", "integration/openbuddy/*.json",
                 "integration/openbuddy/build.mjs", "distribution/workplace/*.md",
                 "distribution/workplace/requirements*.txt",
-                "docs/animations.md", "docs/ble-prototype.md", "docs/opencode-events.md", "docs/hardware.md")
+                "docs/animations.md", "docs/ble-prototype.md", "docs/opencode-events.md", "docs/hardware.md",
+                "docs/s3-amoled.md")
     for pattern in patterns:
         for path in ROOT.glob(pattern):
             if path.is_file() and not path.is_symlink():

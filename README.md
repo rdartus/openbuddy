@@ -4,6 +4,10 @@
 **Waveshare ESP32-C6-LCD-1.47** : écran paysage 320×172, pet animé et halo RVB,
 synchronisés en **Local USB** ou en **Bluetooth**.
 
+Portage **Waveshare ESP32-S3-Touch-AMOLED-1.64 (280x456, 16 Mo flash,
+8 Mo PSRAM)** : installation possible **sans microSD**, voir le
+[guide S3 AMOLED](docs/s3-amoled.md). Ce portage reste a valider sur la carte reelle.
+
 ![Démonstration OpenBuddy : les événements OpenCode synchronisent les écrans et le pet Goku en Local USB ou Bluetooth.](docs/media/openbuddy-demo.gif)
 
 *Scénario simulé, rendu par le vrai code d'affichage du firmware et les animations
@@ -60,19 +64,107 @@ le choix du transport se fait au lancement du pont. En USB, un seul outil peut
 utiliser le port série à la fois. En Bluetooth, le buddy accepte un seul hôte à
 la fois. Les autorisations USB/Bluetooth du système restent applicables.
 
+## Premier setup de l'ESP32
+
+Une carte neuve contient généralement une démonstration constructeur, **pas
+MicroPython ni OpenBuddy**. `pc.deploy` copie les fichiers Python mais n'installe
+pas MicroPython : il faut donc préparer la carte une première fois.
+
+| Carte | MicroPython | Profil `pc.deploy --board` |
+|---|---|---|
+| Waveshare ESP32-C6-LCD-1.47 non tactile | `ESP32_GENERIC_C6` | `waveshare-c6-lcd-147` |
+| Waveshare ESP32-S3-Touch-AMOLED-1.64 | `ESP32_GENERIC_S3-SPIRAM_OCT` | `waveshare-s3-amoled-164` |
+
+**Ne pas utiliser le firmware C6 sur le S3**, ni la variante S3 sans PSRAM octale
+pour cette carte S3R8. Vérifier la référence exacte du matériel avant de commencer.
+
+Pour le **S3 AMOLED, sans microSD**, suivre la
+[procédure Windows PowerShell complète](docs/s3-amoled.md#installation-windows-powershell).
+Elle comprend le téléchargement de MicroPython, le mode BOOT, le flashage, le
+déploiement et les animations en mémoire interne. Le portage reste à valider
+sur la carte réelle ; tactile et IMU ne sont pas utilisés.
+
+Pour le **C6**, depuis la racine du dépôt dans PowerShell :
+
+```powershell
+uv python install 3.13
+uv venv --python 3.13
+uv pip install --python .venv\Scripts\python.exe -r pc\requirements.txt -r pc\requirements-assets.txt esptool
+.\.venv\Scripts\python.exe -m serial.tools.list_ports -v
+$Port = "COM5" # Remplacer par le port detecte
+```
+
+Télécharger le `.bin` MicroPython 1.29.0 depuis
+<https://micropython.org/download/ESP32_GENERIC_C6/> dans la racine du dépôt.
+Pour entrer en bootloader : maintenir BOOT, appuyer puis relâcher RST, puis relâcher
+BOOT. Utiliser un câble USB-C **de données** et vérifier le port après chaque changement
+de mode. Fermer tout pont, moniteur série ou autre outil qui utilise ce port.
+
+**Première installation uniquement : `erase-flash` efface la démonstration usine,
+les fichiers et les appairages. Sauvegarder les données utiles avant.**
+
+```powershell
+.\.venv\Scripts\python.exe -m esptool --chip esp32c6 --port $Port flash-id
+.\.venv\Scripts\python.exe -m esptool --chip esp32c6 --port $Port erase-flash
+.\.venv\Scripts\python.exe -m esptool --chip esp32c6 --port $Port --baud 460800 write-flash 0 ESP32_GENERIC_C6-20260824-v1.29.0.bin
+```
+
+Appuyer sur RST, relister les ports et ajuster `$Port` si nécessaire, puis :
+
+```powershell
+.\.venv\Scripts\python.exe -m serial.tools.list_ports -v
+.\.venv\Scripts\python.exe -m pc.deploy --port $Port --board waveshare-c6-lcd-147
+```
+
+Le robot intégré doit apparaître, même sans pack d'animations. Pour installer le pet,
+voir [les animations](docs/animations.md). Pour une mise à jour ultérieure, relancer
+seulement `pc.deploy` : **ne pas refaire `erase-flash`**. Aucun besoin d'activer le
+venv ni de modifier la politique d'exécution PowerShell avec ces commandes.
+
 ## Installer depuis le dépôt
 
-Prérequis : **Windows 10/11, CPython 3.11–3.14 x64, OpenCode v2** en service
+Prérequis : **Windows 10/11, uv, OpenCode v2** en service
 local géré. Le plugin et le pont tournent sur la même machine qu'OpenCode.
-Le plugin compilé est fourni : **Node/npm n'est pas nécessaire pour l'utiliser**.
+`uv` installe ici CPython 3.13 et gère les dépendances dans `.venv`.
+Avec un kit contenant le plugin compilé, Node/npm n'est pas nécessaire pour
+l'utiliser. Un clone des sources peut nécessiter sa reconstruction ci-dessous.
+Si la carte est neuve, commencer par le [premier setup](#premier-setup-de-lesp32).
 
 Depuis PowerShell :
+
+Installer [uv](https://docs.astral.sh/uv/getting-started/installation/) si nécessaire
+(installation utilisateur, sans administrateur), puis rouvrir PowerShell :
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+La politique d'exécution n'est contournée que pour ce processus d'installation,
+pas modifiée globalement. Depuis la racine du dépôt, ou après clonage :
 
 ```powershell
 git clone https://github.com/Nespouique/openbuddy.git
 Set-Location openbuddy
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r pc\requirements.txt
+uv python install 3.13
+uv venv --python 3.13
+uv pip install --python .venv\Scripts\python.exe -r pc\requirements.txt
+```
+
+Si `.venv` est déjà préparé, ne pas le recréer. Les commandes suivantes appellent
+directement le Python géré par uv, sans activation PowerShell. Le premier setup
+C6 utilise également uv ; installer uv avant de le suivre.
+
+Si `integration\openbuddy\dist\index.js` est absent, installer Node.js avec npm,
+puis générer le plugin :
+
+```powershell
+npm --prefix integration/openbuddy ci --ignore-scripts
+npm --prefix integration/openbuddy run build
+```
+
+Installer ensuite le plugin :
+
+```powershell
 .\.venv\Scripts\python.exe -m pc.install_plugin
 ```
 
@@ -100,7 +192,7 @@ Si le firmware doit être mis à jour, arrêter d'abord le pont et les autres ou
 série, puis :
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r pc\requirements-assets.txt
+uv pip install --python .venv\Scripts\python.exe -r pc\requirements-assets.txt
 .\.venv\Scripts\python.exe -m pc.deploy --port COMx
 ```
 
@@ -137,7 +229,8 @@ Dans un autre terminal, depuis la même racine :
 
 ## Pet et matériel
 
-Le pet est lu sur la **microSD**, en RGB565, avec un seul buffer d'image en RAM.
+Le pet est lu sur la **microSD ou la flash interne**, en RGB565, avec un seul buffer d'image en RAM.
+Sur le S3 AMOLED, l'installation peut se faire entièrement sans microSD.
 Sans pack installé, un robot intégré prend le relais. Les sprites et les packs
 du pet ne sont pas fournis dans le dépôt ou les kits : les visuels ci-dessus sont
 une démonstration de l'affichage, pas un pack d'assets. Le bouton BOOT (appui court)

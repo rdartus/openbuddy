@@ -92,7 +92,8 @@ class BuddyUI:
             lcd.text(LABELS[state], 124, 55, accent, BACKGROUND, 2)
             scale = 2 if buddy.passkey is not None else 1
             lcd.text(detail[:24], 124, 87, WHITE, BACKGROUND, scale)
-            lcd.text(quota or ("PET / MICROSD" if asset_ready
+            asset_label = "PET / FLASH" if getattr(self.player, "source", None) == "internal" else "PET / MICROSD"
+            lcd.text(quota or (asset_label if asset_ready
                                else "USB SERIAL / v1" if usb else "HID + GATT / v1"),
                      124, 113, MUTED, BACKGROUND)
             lcd.fill_rect(12, 141, 296, 1, accent)
@@ -109,7 +110,7 @@ class BuddyUI:
         breath = 1 - abs(phase - 1)
         brightness = 0.02 if state == "offline" else 0.03 + 0.09 * breath
         value = tuple(min(32, int(channel * brightness)) for channel in color)
-        if value != self.led_value:
+        if self.led is not None and value != self.led_value:
             self.led_value = value
             self.led[0] = value
             self.led.write()

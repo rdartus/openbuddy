@@ -1,8 +1,17 @@
 # Matériel OpenBuddy
 
 La Waveshare **ESP32-S3-Touch-AMOLED-1.64** dispose aussi d'un profil dedie,
-d'un pilote CO5300 et du stockage des animations en flash interne. Voir
-[installation S3 AMOLED sans microSD](s3-amoled.md), limites et validation comprises.
+d'un pilote Python `co5300` et du stockage des animations en flash interne.
+Elle exige un firmware MicroPython personnalise avec **`amoled_qspi` natif** :
+le `.bin` officiel et un simple `pc.deploy` ne suffisent pas. Les anciennes demos
+Waveshare nomment le pilote SH8601, les nouvelles CO5300 ; cela ne confirme pas
+une detection du silicium. Les pixels passent en QSPI sur D0..D3, pas en SPI simple.
+SPI2 est reserve au module natif : ne pas creer `machine.SPI(1)` en parallele ;
+la SD utilise un bus separe. Voir le [guide S3 AMOLED](s3-amoled.md) pour le brochage
+et le stockage, et le [guide firmware QSPI](s3-qspi-build.md) pour l'artefact,
+son hash, le reflashage et le test plein ecran suivi d'un reset avant les animations.
+Ce portage est experimental et reste a valider sur materiel. Les regles C6
+ci-dessous ne changent pas : son firmware reste officiel.
 
 ## Carte principale
 
@@ -44,8 +53,8 @@ en continu depuis le PC.
 Les numéros de port série changent selon le PC :
 
 ```powershell
-python -m serial.tools.list_ports -v
-python -m pc.deploy --port COMX
+uv run python -m serial.tools.list_ports -v
+uv run python -m pc.deploy --port COMX
 ```
 
 Remplacer `COMX` par le port détecté. L'outil copie les fichiers du firmware sans
@@ -63,7 +72,7 @@ après l'arrêt du pont Python : déconnecter l'ancien hôte avant un nouvel app
 
 Le firmware **0.3.0** accepte également les états par le port USB-Serial/JTAG
 intégré, sans appairage Bluetooth. Le pont se lance avec
-`python -m pc.opencode --serial auto` (ou `--serial COMx`).
+`uv run python -m pc.opencode --serial auto` (ou `--serial COMx`).
 Les boutons et le clavier HID ne sont pas exposés par ce transport. Un seul outil
 peut ouvrir le port série à la fois : arrêter le pont avant un déploiement, un
 transfert d'assets ou une session REPL. L'USB doit être autorisé sur le poste.

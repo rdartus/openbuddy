@@ -1,12 +1,19 @@
 # Windows avec uv : apres le flashage
 
-Procedure pour la **Waveshare ESP32-S3-Touch-AMOLED-1.64**, apres avoir flashe
-MicroPython `ESP32_GENERIC_S3-SPIRAM_OCT-20260824-v1.29.0.bin` avec succes.
-**Ne pas refaire `erase-flash`.**
+Procedure pour la **Waveshare ESP32-S3-Touch-AMOLED-1.64**, apres installation du
+firmware experimental OpenBuddy avec le module natif **`amoled_qspi`**.
+**Si vous avez deja flashe MicroPython officiel, commencer par le
+[guide firmware S3 QSPI](s3-qspi-build.md#installation-windows-uv)** : il centralise
+le telechargement de l'artefact, la verification SHA-256, la sauvegarde et le
+reflashage. Ne plus telecharger de `.bin` officiel pour ce S3. Ne pas lancer
+`erase-flash` par reflexe ; suivre les conditions de preservation du guide.
 
 Executer les commandes dans PowerShell, depuis la racine du depot contenant
-le portage AMOLED. uv et les dependances Python doivent deja etre installes.
-Une microSD n'est pas necessaire pour cette procedure.
+le portage AMOLED du meme build que le firmware. uv et les dependances Python
+doivent deja etre installes. Pour le plugin et le pont, utiliser le depot complet
+au commit indique dans `BUILD.json`, pas seulement le ZIP des fichiers firmware.
+Une microSD n'est pas necessaire pour cette procedure. Le C6 n'est pas concerne
+et conserve son firmware officiel.
 
 ## 1. Verifier la carte
 
@@ -17,29 +24,33 @@ uv run python -m serial.tools.list_ports -v
 $Port = "COM7" # Ajuster selon le port detecte
 ```
 
-Verifier que MicroPython repond et afficher la memoire disponible :
+Verifier le module natif avant tout deploiement :
 
 ```powershell
-uv run python -m mpremote connect $Port exec "import os, gc; print(os.uname()); print('RAM libre:', gc.mem_free()); s=os.statvfs('/'); print('Flash filesystem total/libre:', s[0]*s[2], s[0]*s[4])"
+uv run python -m mpremote connect $Port exec "import amoled_qspi; print(amoled_qspi.Bus)"
 ```
 
-## 2. Deployer OpenBuddy
+Si l'import echoue, revenir au [guide firmware QSPI](s3-qspi-build.md) : copier
+un fichier Python ne peut pas installer ce module C.
 
-Verifier que la copie du depot contient le portage AMOLED :
+## 2. Deployer et tester l'ecran
 
-```powershell
-Test-Path .\c6lcd\co5300.py
-```
-
-Le resultat doit etre `True`. Deployer le profil de la carte :
+Deployer le profil de la carte. `pc.deploy` effectue un preflight du module natif
+avant de copier les fichiers. Tester ensuite la dalle sans BLE ni SD :
 
 ```powershell
 uv run python -m pc.deploy --port $Port --board waveshare-s3-amoled-164
+uv run python -m mpremote connect $Port run tools/test_amoled.py
+uv run python -m mpremote connect $Port reset
 ```
 
-Le robot integre devrait apparaitre. **Si l'ecran reste noir, suivre le diagnostic
-en fin de document avant de continuer.** Le portage n'a pas encore ete valide sur
-le materiel reel ; le tactile et l'IMU ne sont pas utilises.
+Le test doit afficher **rouge, vert, bleu, noir, blanc**, sur toute la dalle,
+1,5 seconde par couleur. **Terminer par `reset` meme si le test echoue.** Si l'ecran
+reste noir ou si le test echoue, conserver la sortie et suivre le diagnostic
+avant de continuer : ne pas installer les animations. Le portage est experimental ;
+compilation et tests simules ne valident pas le materiel reel. Le tactile et l'IMU
+ne sont pas utilises. Si cette sequence a deja reussi dans le guide QSPI, passer
+directement aux animations.
 
 ## 3. Installer les animations sans microSD
 
@@ -117,7 +128,9 @@ uv run python -m mpremote connect $Port exec "import board_config as c; print(c.
 uv run python -m mpremote connect $Port reset
 ```
 
-Le profil attendu est `waveshare-s3-amoled-164 co5300`. Si le fichier d'erreur
+Le profil attendu est `waveshare-s3-amoled-164 co5300`. Le nom `co5300` reste celui
+du profil : les anciennes demos constructeur disent SH8601, les nouvelles CO5300,
+sans detection confirmee du silicium. Si le fichier d'erreur
 n'existe pas, ce n'est pas necessairement anormal : une erreur d'initialisation
 ecran peut survenir avant la creation du journal.
 
@@ -132,5 +145,6 @@ puis **Ctrl+]** pour quitter le REPL. Les acces REPL peuvent interrompre le
 programme ; terminer les diagnostics par un `reset` si necessaire.
 
 Conserver les sorties des commandes et noter ce que montre l'ecran pour diagnostiquer
-un probleme. Le [guide complet S3 AMOLED](s3-amoled.md) contient aussi le flashage
-initial et les limites du portage.
+un probleme. Le [guide firmware QSPI](s3-qspi-build.md) fait reference pour le
+reflashage et le test ; le [guide S3 AMOLED](s3-amoled.md) decrit le materiel,
+le stockage et les limites du portage.

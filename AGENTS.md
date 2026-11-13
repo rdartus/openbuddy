@@ -1,14 +1,15 @@
 # openbuddy
 
-Petit appareil physique (ESP32) qui rend OpenCode interactif dans le monde réel : il signale quand OpenCode attend une réponse et affiche son état (pet animé depuis la microSD). Aucune action n'est validée depuis l'appareil pour l'instant.
+Petit appareil physique (ESP32) qui rend OpenCode interactif dans le monde réel : il signale quand OpenCode attend une réponse et affiche son état (pet animé depuis la microSD ou la flash interne sur S3). Aucune action n'est validée depuis l'appareil pour l'instant.
 
 Lire d'abord `docs/hardware.md` (matériel, brochage, pièges), `docs/opencode-events.md` et `docs/animations.md` avant de modifier le firmware ou l'intégration.
+Pour le S3 AMOLED, lire aussi [le guide firmware QSPI](docs/s3-qspi-build.md), reference pour les versions, artefacts, hashes, reflashage, compilation et tests natifs. Ne pas dupliquer ces procedures dans les autres guides.
 
 ## Conventions
 
 - Réponses et documentation en français. Code, noms, commentaires et messages de commit en anglais.
-- Ne pas supposer de droits administrateur sur le PC (Windows) : tout passe par `pip` en mode utilisateur, aucun `.msi`.
-- Firmware en **MicroPython** (aucune toolchain C requise). Outils : `python -m esptool`, `python -m mpremote`, `python -m serial.tools.list_ports`.
+- Ne pas supposer de droits administrateur sur le PC (Windows) : utiliser uv et `.venv`, aucun `.msi`. Commandes Python Windows : `uv run python`, sans activation PowerShell.
+- Firmware en **MicroPython**. Le C6 conserve MicroPython officiel, sans toolchain C. Exception S3 AMOLED : module C `amoled_qspi` compile dans un firmware personnalise avec PSRAM octale ; le `.bin` officiel ne suffit pas et `pc.deploy` ne peut pas installer ce module. Compiler exige la toolchain ESP-IDF sous Linux, hors environnement uv ; utiliser un artefact construit ne l'exige pas sur le PC Windows.
 - Ne pas utiliser `$_` dans un `powershell -Command` lancé depuis bash : passer par un fichier `.ps1`.
 - Tests matériels toujours mockés en CI : ne pas flasher d'appareil ni jouer de notification bureau depuis les tests unitaires.
 - Ne jamais committer : clés d'appairage BLE, jetons de découverte du pont, adresses d'appareil réelles, ports série ou chemins personnels, packs du pet, caches, environnements virtuels, `node_modules`. Ce fichier est publié : il ne doit contenir aucune de ces informations.
@@ -16,14 +17,15 @@ Lire d'abord `docs/hardware.md` (matériel, brochage, pièges), `docs/opencode-e
 ## Structure
 
 - `c6lcd/` : firmware **MicroPython** de la Waveshare ESP32-C6-LCD-1.47. `board_config.py` = broches et géométrie (source unique), `st7789.py` = driver écran, `main.py`/`companion.py` = boucle principale, `buddy_ble.py` = HID/GATT/appairage, `buddy_ui.py` = écran et halo, `buddy_protocol.py` = protocole partagé PC/carte.
+- `c6lcd/co5300.py` : pilote S3 AMOLED utilisant `amoled_qspi` natif (sources dans `native/`). Anciennes demos Waveshare : SH8601 ; nouvelles : CO5300. Le nom du module Python est conserve pour les profils existants, sans detection confirmee du silicium. Registres sur une ligne, pixels sur quatre ; SPI2 reserve au module natif, ne pas creer `machine.SPI(1)` en parallele. SD sur bus separe.
 - `c6lcd/buddy_usb.py` : transport USB série, même protocole JSON que BLE, sans HID ni remontée des boutons. Le firmware conserve les deux transports ; USB prend l'affichage tant que sa lease est active, sauf appairage BLE prioritaire.
 - `c6lcd/orientation_demo.py` : ancienne démo conservée.
 - `c6lcd/shared_spi.py`, `sdcard_spi.py`, `storage.py`, `pet_player.py` : bus écran/SD partagé, carte en lecture seule, lecteur RGB565 à un buffer.
-- `pc/buddy.py` : diagnostic BLE Python/Bleak, `python -m pc.buddy` depuis la racine.
+- `pc/buddy.py` : diagnostic BLE Python/Bleak, `uv run python -m pc.buddy` depuis la racine.
 - `pc/pet.py` : conversion Codex Pets et installation USB vérifiée ; `pc/deploy.py` : déploiement firmware sans effacement.
-- `pc/opencode.py` : pont événements → carte, démarrage `python -m pc.opencode`, diagnostic/arrêt avec `status`/`stop`.
-- Mode USB : `python -m pc.opencode --serial auto` (ou un port explicite), diagnostic `python -m pc.buddy --serial auto status`. Un seul outil sur le port série, DTR/RTS bas. Arrêter le pont avant `pc.deploy`, `pc.pet` ou `mpremote`.
-- `integration/openbuddy/dist/` : plugin v2 autonome généré, hors autochargement ; sources dans `integration/openbuddy/src/`, métadonnées/licence dans `assets/`, build `npm --prefix integration/openbuddy run build`. Ne pas éditer `index.js` à la main. Installation globale avec `python -m pc.install_plugin`.
+- `pc/opencode.py` : pont événements → carte, démarrage `uv run python -m pc.opencode`, diagnostic/arrêt avec `status`/`stop`.
+- Mode USB : `uv run python -m pc.opencode --serial auto` (ou un port explicite), diagnostic `uv run python -m pc.buddy --serial auto status`. Un seul outil sur le port série, DTR/RTS bas. Arrêter le pont avant `pc.deploy`, `pc.pet` ou `mpremote`.
+- `integration/openbuddy/dist/` : plugin v2 autonome généré, hors autochargement ; sources dans `integration/openbuddy/src/`, métadonnées/licence dans `assets/`, build `npm --prefix integration/openbuddy run build`. Ne pas éditer `index.js` à la main. Installation globale avec `uv run python -m pc.install_plugin`.
 - `pc/quota.py` : texte `utilisé / limite` du fournisseur (ex. `0 / 200`) via une commande configurée dans `%APPDATA%\openbuddy\quota.json`, envoyé au firmware dans le champ optionnel `info` de la commande `state` et affiché à la place de `PET / MICROSD` ; rafraîchi toutes les 600 s et à l'entrée dans les états de `refresh_on` (`success` par défaut, 10 s minimum entre deux appels) ; `--no-quota` ou `--quota-config`. Les tests ne doivent jamais lancer la vraie commande (voir `setUpModule` de `tests/test_opencode_bridge.py`).
 - `pc/notifications.py` : sons système Windows, option `--mute`. `pc/toasts.py` : notifications Windows WinRT natives, texte générique, toast silencieux, option `--no-notifications`, aucun bouton de validation.
 - `pc/install_plugin.py` : installateur du plugin (global par défaut, projet en option), sauvegarde avant `--replace`, aucun changement des configs JSON.
@@ -35,6 +37,7 @@ Lire d'abord `docs/hardware.md` (matériel, brochage, pièges), `docs/opencode-e
 ## État
 
 - Cible : C6-LCD-1.47, MicroPython 1.29, écran **landscape 320×172** (USB-C à gauche par défaut), BLE HID + GATT et USB série, appairage authentifié avec clés persistantes.
+- Portage S3-Touch-AMOLED-1.64 experimental : firmware natif obligatoire, installation sans microSD possible. Meme apres un flash officiel reussi, commencer par le guide QSPI, puis `import amoled_qspi`, preflight de `pc.deploy`, `tools/test_amoled.py` et `reset` meme en cas d'echec, avant les animations. Conserver les sorties si le test echoue ; ne pas multiplier les effacements.
 - Microprogramme **0.4.0** (kits publiés en 1.2.0 : firmware 0.3.0). Pet lu depuis une microSD FAT32 partagée avec l'écran (un buffer de 19 968 octets).
 - Plugin `openbuddy.events` autonome (SDK 2.2.5 embarqué, sans Node/npm), réservé au service OpenCode local géré. Éviter de charger en même temps les copies globale et projet (`Duplicate plugin ID`).
 - Pont Python 3.11+, sons et toasts Windows indépendants du BLE. Utiliser le runtime WinRT 4.1.0 ; ne pas installer Windows-Toasts 1.3.1 (impose un runtime 3.x incompatible).
@@ -55,10 +58,17 @@ Lire d'abord `docs/hardware.md` (matériel, brochage, pièges), `docs/opencode-e
 ## Vérifications
 
 ```text
-python -m unittest discover -s tests -v
+uv run python -m unittest discover -s tests -v
 npm --prefix integration/openbuddy test
 npm --prefix integration/openbuddy run typecheck
 ```
+
+Les tests Python simules ne compilent pas le module C. La compilation Linux et
+les tests C sur hote sont decrits dans le [guide QSPI](docs/s3-qspi-build.md#compilation-linux-sans-docker).
+Un build reussi et des tests simules ne valident ni le transport electrique,
+ni les couleurs, ni la rotation, ni les redemarrages sur la carte reelle.
+`tools/test_amoled.py` est un diagnostic materiel manuel, pas un test CI :
+il affiche les cinq couleurs plein ecran sans BLE ni SD, puis exige un reset.
 
 ## Prochaines étapes
 

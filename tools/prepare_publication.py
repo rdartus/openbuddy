@@ -19,17 +19,24 @@ def files():
         "THIRD_PARTY.md": ROOT / "THIRD_PARTY.md",
         "tools/assets/font_petme128_8x8.h": ROOT / "tools/assets/font_petme128_8x8.h",
         ".github/workflows/release.yml": ROOT / ".github/workflows/release.yml",
+        ".github/workflows/s3-qspi.yml": ROOT / ".github/workflows/s3-qspi.yml",
         "plugin/openbuddy/index.js": ROOT / "integration/openbuddy/dist/index.js",
         "plugin/openbuddy/package.json": ROOT / "integration/openbuddy/dist/package.json",
         "plugin/openbuddy/LICENSES.txt": ROOT / "integration/openbuddy/dist/LICENSES.txt",
     }
     patterns = ("c6lcd/*.py", "pc/*.py", "pc/requirements*.txt", "tools/*.py", "tools/*.cmd", "tests/*.py",
+                "tools/build_s3_qspi.sh", "native/amoled_qspi/*.c", "native/amoled_qspi/micropython.cmake",
+                "tests/native_qspi/*.c", "tests/native_qspi/*.py", "tests/native_qspi/*.sh",
+                "tests/native_qspi/Makefile", "tests/native_qspi/micropython.mk",
+                "tests/native_qspi/include/*.h", "tests/native_qspi/include/driver/*.h",
+                "tests/native_qspi/idf_syntax/*.h", "tests/native_qspi/idf_syntax/freertos/*.h",
                 "integration/openbuddy/src/*.ts", "integration/openbuddy/test/*.ts",
                 "integration/openbuddy/assets/*", "integration/openbuddy/*.json",
                 "integration/openbuddy/build.mjs", "distribution/workplace/*.md",
                 "distribution/workplace/requirements*.txt",
                 "docs/animations.md", "docs/ble-prototype.md", "docs/opencode-events.md", "docs/hardware.md",
-                "docs/s3-amoled.md")
+                "docs/s3-amoled.md", "docs/s3-qspi-build.md", "docs/windows-uv-apres-flash.md",
+                "docs/windows-local-qspi.md")
     for pattern in patterns:
         for path in ROOT.glob(pattern):
             if path.is_file() and not path.is_symlink():

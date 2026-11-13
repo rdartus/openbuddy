@@ -1,0 +1,110 @@
+name: Build S3 AMOLED QSPI firmware
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/s3-qspi.yml'
+      - 'native/**'
+      - 'c6lcd/**'
+      - 'pc/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'docs/s3-*.md'
+      - 'docs/windows-uv-apres-flash.md'
+      - 'docs/windows-local-qspi.md'
+      - 'THIRD_PARTY.md'
+      - 'integration/openbuddy/**'
+  push:
+    branches: ['master', 'feat/esp32-s3-amoled-164']
+    tags: ['s3-qspi-*']
+    paths:
+      - '.github/workflows/s3-qspi.yml'
+      - 'native/**'
+      - 'c6lcd/**'
+      - 'pc/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'docs/s3-*.md'
+      - 'docs/windows-uv-apres-flash.md'
+      - 'docs/windows-local-qspi.md'
+      - 'THIRD_PARTY.md'
+      - 'integration/openbuddy/**'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: s3-qspi-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '25'
+      - name: Install dependencies
+        run: |
+          python -m pip install -r pc/requirements.txt -r pc/requirements-assets.txt
+          npm --prefix integration/openbuddy ci --ignore-scripts
+      - name: Build and verify plugin
+        run: |
+          npm --prefix integration/openbuddy run build
+          npm --prefix integration/openbuddy test
+          npm --prefix integration/openbuddy run typecheck
+      - name: Test Python deployment and firmware package
+        run: python -m unittest discover -s tests -v
+
+  build:
+    needs: tests
+    runs-on: ubuntu-24.04
+    container: espressif/idf:v5.5.2
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Fetch MicroPython sources
+        run: git clone --depth 1 --branch v1.29.0 https://github.com/micropython/micropython.git /tmp/micropython
+      - name: Test native transport on host
+        run: make -f tests/native_qspi/Makefile MICROPYTHON=/tmp/micropython
+      - name: Build firmware and package matching Python files
+        run: |
+          . /opt/esp/idf/export.sh
+          bash tools/build_s3_qspi.sh /tmp/micropython
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: openbuddy-s3-amoled-qspi
+          path: dist/s3-qspi/*
+          if-no-files-found: error
+          retention-days: 30
+
+  prerelease:
+    if: startsWith(github.ref, 'refs/tags/s3-qspi-')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: openbuddy-s3-amoled-qspi
+          path: firmware
+      - name: Publish experimental prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          gh release create "$TAG" firmware/* --verify-tag --target "$COMMIT" --prerelease \
+            --title "S3 AMOLED QSPI $TAG (experimental)" \
+            --notes "Experimental MicroPython 1.29.0 / ESP-IDF 5.5.2 firmware with native QSPI. Hardware validation required. Download the matching source ZIP and follow its Windows uv instructions. No pet artwork is included."

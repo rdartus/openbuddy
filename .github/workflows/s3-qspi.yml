@@ -72,6 +72,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory /__w/openbuddy/openbuddy
       - name: Fetch MicroPython sources
         run: git clone --depth 1 --branch v1.29.0 https://github.com/micropython/micropython.git /tmp/micropython
       - name: Test native transport on host

@@ -1,4 +1,5 @@
 import sys
+import subprocess
 import unittest
 from unittest.mock import patch
 
@@ -11,7 +12,9 @@ class DeployTests(unittest.TestCase):
                                        "waveshare-s3-amoled-164"]), \
                 patch.object(deploy.subprocess, "run") as run:
             deploy.main()
-        transfer, reset = run.call_args_list
+        preflight, transfer, reset = run.call_args_list
+        self.assertIn("from amoled_qspi import Bus", preflight.args[0][-1])
+        self.assertIn("board = 'waveshare-s3-amoled-164'", preflight.args[0][-1])
         command = transfer.args[0]
         self.assertIn(":co5300.py", command)
         self.assertEqual(command[-3:], ["+", "exec", "with open('openbuddy-board.txt', 'w') as f: f.write('waveshare-s3-amoled-164')"])
@@ -21,4 +24,62 @@ class DeployTests(unittest.TestCase):
         with patch.object(sys, "argv", ["deploy", "--port", "auto"]), \
                 patch.object(deploy.subprocess, "run") as run:
             deploy.main()
-        self.assertNotIn("exec", run.call_args_list[0].args[0])
+        preflight, transfer, reset = run.call_args_list
+        self.assertNotIn("exec", transfer.args[0])
+        script = preflight.args[0][-1]
+        self.assertIn("board = None", script)
+        self.assertIn("openbuddy-board.txt", script)
+
+    def test_missing_native_module_prevents_all_writes_and_still_resets(self):
+        for board in ([], ["--board", "waveshare-s3-amoled-164"]):
+            with self.subTest(board=board), \
+                    patch.object(sys, "argv", ["deploy", "--port", "auto"] + board), \
+                    patch.object(deploy.subprocess, "run", side_effect=[
+                        subprocess.CalledProcessError(1, "preflight"), None]) as run, \
+                    patch.object(sys, "stderr"):
+                with self.assertRaises(SystemExit) as error:
+                    deploy.main()
+                self.assertEqual(error.exception.code, 1)
+                self.assertEqual(len(run.call_args_list), 2)
+                self.assertNotIn("fs", run.call_args_list[0].args[0])
+                self.assertEqual(run.call_args_list[-1].args[0][-1], "reset")
+
+    def test_explicit_c6_does_not_require_native_module(self):
+        with patch.object(sys, "argv", ["deploy", "--port", "auto", "--board",
+                                       "waveshare-c6-lcd-147"]), \
+                patch.object(deploy.subprocess, "run") as run:
+            deploy.main()
+        transfer, reset = run.call_args_list
+        self.assertIn("fs", transfer.args[0])
+        self.assertEqual(reset.args[0][-1], "reset")
+
+    def test_preflight_checks_only_selected_or_persisted_s3_profile(self):
+        import builtins
+        import io
+        from unittest.mock import Mock
+
+        for selected, persisted, requires_native in (
+                ("waveshare-s3-amoled-164", None, True),
+                (None, "waveshare-s3-amoled-164\n", True),
+                (None, "waveshare-c6-lcd-147\n", False),
+                (None, None, False)):
+            argv = ["deploy", "--port", "auto"]
+            if selected:
+                argv.extend(["--board", selected])
+            with self.subTest(selected=selected, persisted=persisted), \
+                    patch.object(sys, "argv", argv), \
+                    patch.object(deploy.subprocess, "run") as run:
+                deploy.main()
+                script = run.call_args_list[0].args[0][-1]
+                importer = Mock(side_effect=ImportError("Missing native module"))
+                opener = (Mock(side_effect=OSError("No saved profile")) if persisted is None
+                          else Mock(return_value=io.StringIO(persisted)))
+                environment = {"__builtins__": dict(vars(builtins), __import__=importer,
+                                                    open=opener)}
+                if requires_native:
+                    with self.assertRaisesRegex(ImportError, "Install.*native amoled_qspi"):
+                        exec(script, environment)
+                    importer.assert_called_once()
+                else:
+                    exec(script, environment)
+                    importer.assert_not_called()

@@ -4,15 +4,15 @@ import io
 from pathlib import Path
 import types
 import unittest
-from unittest.mock import Mock
+from unittest.mock import Mock, patch
 
 
 FIRMWARE = Path(__file__).resolve().parents[1] / "c6lcd"
 
 
-def load_module(name, dependencies=None, **overrides):
+def load_module(name, dependencies=None, directory=FIRMWARE, **overrides):
     dependencies = dependencies or {}
-    spec = importlib.util.spec_from_file_location("_amoled_test_" + name, FIRMWARE / (name + ".py"))
+    spec = importlib.util.spec_from_file_location("_amoled_test_" + name, directory / (name + ".py"))
     module = importlib.util.module_from_spec(spec)
 
     def isolated_import(name, globals=None, locals=None, fromlist=(), level=0):
@@ -31,6 +31,8 @@ class AMOLEDTests(unittest.TestCase):
             "waveshare-s3-amoled-164\n")))
         self.pins = {}
         self.events = []
+        self.buses = []
+        buses = self.buses
         pins, events = self.pins, self.events
 
         class FakePin:
@@ -38,26 +40,30 @@ class AMOLEDTests(unittest.TestCase):
 
             def __init__(self, number, mode=None, value=None):
                 self.number, self.mode, self.value = number, mode, value
-                self.transactions = []
                 pins[number] = self
 
             def __call__(self, value):
                 self.value = value
                 events.append(("pin", self.number, value))
-                if value == 0:
-                    self.transactions.append([])
 
-        class FakeSPI:
-            def __init__(self, number, **kwargs):
-                self.number, self.options = number, kwargs
+        class FakeBus:
+            def __init__(self, **kwargs):
+                self.options = kwargs
+                self.transactions = []
+                self.payload_buffers = []
+                self.deinit = Mock()
+                self.fail_command = None
+                buses.append(self)
 
-            def write(self, data):
-                cs = pins[cfg.LCD_CS]
-                if cs.value != 0:
-                    raise AssertionError("SPI write while chip select is high")
-                cs.transactions[-1].append(bytes(data))
+            def write(self, command, data=None, quad=False):
+                if command == self.fail_command:
+                    raise OSError("Native transfer failed")
+                self.transactions.append((command, None if data is None else bytes(data), quad))
+                if quad:
+                    self.payload_buffers.append(data.obj)
 
-        machine = types.SimpleNamespace(Pin=FakePin, SPI=FakeSPI, PWM=Mock(
+        machine = types.SimpleNamespace(Pin=FakePin, SPI=Mock(
+            side_effect=AssertionError("AMOLED must not create machine.SPI")), PWM=Mock(
             side_effect=AssertionError("AMOLED must not create a backlight PWM")))
         clock = types.SimpleNamespace(sleep_ms=lambda ms: events.append(("sleep", ms)))
         self.framebuf = types.SimpleNamespace()
@@ -66,53 +72,41 @@ class AMOLEDTests(unittest.TestCase):
             "machine": machine, "board_config": cfg, "shared_spi": shared,
             "framebuf": self.framebuf, "time": clock,
         })
-        self.driver = load_module("co5300", {
+        self.dependencies = {
             "machine": machine, "board_config": cfg, "st7789": self.renderer, "time": clock,
-        })
+            "amoled_qspi": types.SimpleNamespace(Bus=FakeBus),
+        }
+        self.driver = load_module("co5300", self.dependencies)
         self.lcd = self.driver.LCD()
+        self.addCleanup(self.lcd.close)
 
     @property
     def transactions(self):
-        return self.lcd.cs.transactions
+        return self.lcd.bus.transactions
 
     def assert_window(self, left, top, right, bottom, pixels):
         self.assertEqual(self.transactions, [
-            [b"\x02\x00\x2a\x00", left.to_bytes(2, "big") + right.to_bytes(2, "big")],
-            [b"\x02\x00\x2b\x00", top.to_bytes(2, "big") + bottom.to_bytes(2, "big")],
-            [b"\x02\x00\x2c\x00"] + pixels,
+            (0x2A, left.to_bytes(2, "big") + right.to_bytes(2, "big"), False),
+            (0x2B, top.to_bytes(2, "big") + bottom.to_bytes(2, "big"), False),
+            (0x2C, b"".join(pixels), True),
         ])
-        self.assertEqual(self.lcd.cs.value, 1)
 
-    def test_reset_initialization_and_single_lane_command_framing(self):
+    def test_reset_initialization_and_native_quad_transport(self):
         self.assertEqual(self.events[:4], [
             ("pin", 21, 0), ("sleep", 10), ("pin", 21, 1), ("sleep", 150),
         ])
         self.assertEqual([event[1] for event in self.events if event[0] == "sleep"],
                          [10, 150, 80, 1, 1, 1, 10])
         self.assertEqual(self.transactions[:9], [
-            [b"\x02\x00\x36\x00", b"\x00"],
-            [b"\x02\x00\x3a\x00", b"\x55"],
-            [b"\x02\x00\x11\x00"],
-            [b"\x02\x00\xc4\x00", b"\x80"],
-            [b"\x02\x00\x35\x00", b"\x00"],
-            [b"\x02\x00\x53\x00", b"\x20"],
-            [b"\x02\x00\x63\x00", b"\xff"],
-            [b"\x02\x00\x51\x00", b"\x00"],
-            [b"\x02\x00\x29\x00"],
+            (0x36, b"\x00", False), (0x3A, b"\x55", False),
+            (0x11, None, False), (0xC4, b"\x80", False),
+            (0x35, b"\x00", False), (0x53, b"\x20", False),
+            (0x63, b"\xff", False), (0x51, b"\x00", False),
+            (0x29, None, False),
         ])
-        self.assertEqual(self.transactions[-1], [b"\x02\x00\x51\x00", b"\x80"])
-        for transaction in self.transactions:
-            self.assertEqual(len(transaction[0]), 4)
-            self.assertEqual(transaction[0][::3], b"\x02\x00")
-            self.assertEqual(transaction[0][1], 0)
-            self.assertNotEqual(transaction[0][0], 0x32)
-        self.assertEqual(self.lcd.spi.number, 1)
-        self.assertEqual({key: self.lcd.spi.options[key] for key in (
-            "baudrate", "polarity", "phase", "miso")},
-            {"baudrate": 10_000_000, "polarity": 0, "phase": 0, "miso": None})
-        self.assertEqual(self.lcd.spi.options["sck"].number, 10)
-        self.assertEqual(self.lcd.spi.options["mosi"].number, 11)
-        self.assertEqual(set(self.pins), {9, 21, 10, 11})
+        self.assertEqual(self.transactions[-1], (0x51, b"\x80", False))
+        self.assertEqual(self.lcd.bus.options, {"baudrate": 10_000_000})
+        self.assertEqual(set(self.pins), {21})
 
     def test_initial_clear_covers_panel_with_twenty_column_offset(self):
         self.assertEqual((self.lcd.w, self.lcd.h), (320, 172))
@@ -217,6 +211,103 @@ class AMOLEDTests(unittest.TestCase):
         self.lcd.text("", 0, 0, 0xFFFF, 0)
         self.assertEqual(self.transactions, [])
         self.assertFalse(hasattr(self.framebuf, "FrameBuffer"))
+
+    def test_full_physical_clear_colors_and_reusable_contiguous_payload(self):
+        scratch = self.lcd.transfer_buffer
+        for color in (0xF800, 0x07E0, 0x001F, 0, 0xFFFF):
+            with self.subTest(color=color):
+                self.transactions.clear()
+                self.lcd.clear_all(color)
+                expected = color.to_bytes(2, "big") * (280 * 456)
+                self.assert_window(20, 0, 299, 455, [expected])
+                self.assertEqual(self.lcd.buffer, expected)
+                self.assertIs(self.lcd.transfer_buffer, scratch)
+        self.lcd.fill_rect(1, 1, 3, 5, 0x1234)
+        self.assertTrue(all(buf is scratch for buf in self.lcd.bus.payload_buffers))
+
+    def test_physical_bounds_and_edge_alignment(self):
+        self.transactions.clear()
+        for bounds in ((-1, 0, 1, 1), (0, -1, 1, 1), (280, 0, 1, 1),
+                       (0, 456, 1, 1), (279, 455, 2, 1)):
+            with self.subTest(bounds=bounds), self.assertRaises(ValueError):
+                self.lcd._flush(*bounds)
+        self.assertEqual(self.transactions, [])
+        self.lcd._flush(279, 455, 1, 1)
+        self.assert_window(298, 454, 299, 455, [bytes(8)])
+
+    def test_close_releases_native_bus_and_buffers_once(self):
+        bus = self.lcd.bus
+        self.lcd.close()
+        self.lcd.close()
+        bus.deinit.assert_called_once_with()
+        for name in ("bus", "buffer", "view", "transfer_buffer", "transfer_view"):
+            self.assertIsNone(getattr(self.lcd, name))
+
+    def test_initialization_errors_release_bus(self):
+        for command in (0x36, 0x2C, 0x51):
+            bus_type = self.dependencies["amoled_qspi"].Bus
+
+            def failing_bus(**kwargs):
+                bus = bus_type(**kwargs)
+                bus.fail_command = command
+                return bus
+
+            with self.subTest(command=command), \
+                    patch.object(self.driver.amoled_qspi, "Bus", failing_bus):
+                with self.assertRaisesRegex(OSError, "Native transfer failed"):
+                    self.driver.LCD()
+                self.buses[-1].deinit.assert_called_once_with()
+        with self.assertRaises(ValueError):
+            self.driver.LCD("portrait")
+        self.buses[-1].deinit.assert_called_once_with()
+
+    def test_reset_pin_failure_releases_bus(self):
+        with patch.object(self.driver, "Pin", side_effect=OSError("Pin failed")):
+            with self.assertRaisesRegex(OSError, "Pin failed"):
+                self.driver.LCD()
+        self.buses[-1].deinit.assert_called_once_with()
+
+    def test_missing_native_module_has_actionable_import_error(self):
+        dependencies = dict(self.dependencies, amoled_qspi=None)
+        del dependencies["amoled_qspi"]
+        original_import = builtins.__import__
+
+        def missing_import(name, *args, **kwargs):
+            if name == "amoled_qspi":
+                raise ImportError("No module named amoled_qspi")
+            return original_import(name, *args, **kwargs)
+
+        with patch.object(builtins, "__import__", missing_import):
+            with self.assertRaisesRegex(ImportError, "install.*QSPI MicroPython firmware"):
+                load_module("co5300", dependencies)
+
+    def test_ram_tool_uses_full_physical_clear_and_closes(self):
+        lcd = Mock()
+        constructor = Mock(return_value=lcd)
+        clock = types.SimpleNamespace(sleep_ms=Mock())
+        cfg = types.SimpleNamespace(BOARD_MODEL="waveshare-s3-amoled-164",
+                                    DISPLAY_DRIVER="co5300")
+        tool = load_module("test_amoled", {
+            "board_config": cfg, "time": clock,
+            "co5300": types.SimpleNamespace(LCD=constructor, rgb=self.driver.rgb),
+        }, directory=FIRMWARE.parent / "tools", print=Mock())
+        tool.main()
+        self.assertEqual([call.args for call in lcd.clear_all.call_args_list],
+                         [(0xF800,), (0x07E0,), (0x001F,), (0,), (0xFFFF,), (0,)])
+        self.assertEqual([call.args for call in clock.sleep_ms.call_args_list], [(1500,)] * 5)
+        lcd.close.assert_called_once_with()
+        lcd.reset_mock()
+        lcd.clear_all.side_effect = OSError("Transfer failed")
+        with self.assertRaisesRegex(OSError, "Transfer failed"):
+            tool.main()
+        lcd.close.assert_called_once_with()
+        constructor.reset_mock()
+        for model, driver in (("waveshare-c6-lcd-147", "st7789"),
+                              ("waveshare-s3-amoled-164", "st7789")):
+            cfg.BOARD_MODEL, cfg.DISPLAY_DRIVER = model, driver
+            with self.assertRaisesRegex(RuntimeError, "board profile"):
+                tool.main()
+        constructor.assert_not_called()
 
 
 if __name__ == "__main__":

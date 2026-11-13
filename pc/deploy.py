@@ -25,6 +25,25 @@ def main():
     if args.board:
         command.extend(["+", "exec", "with open('openbuddy-board.txt', 'w') as f: f.write(%r)" % args.board])
     try:
+        if args.board != "waveshare-c6-lcd-147":
+            # Read the persisted identity directly, even on an older deployment.
+            preflight = "board = %r\n" % args.board
+            preflight += (
+                "if board is None:\n"
+                "    try:\n"
+                "        with open('openbuddy-board.txt') as f: board = f.read(64).strip()\n"
+                "    except OSError:\n"
+                "        board = 'waveshare-c6-lcd-147'\n"
+                "if board == 'waveshare-s3-amoled-164':\n"
+                "    try:\n"
+                "        from amoled_qspi import Bus\n"
+                "    except ImportError:\n"
+                "        raise ImportError('Install the OpenBuddy ESP32-S3 QSPI MicroPython "
+                "firmware with native amoled_qspi and octal PSRAM before deploying; "
+                "stock MicroPython cannot drive this panel')\n"
+            )
+            subprocess.run([sys.executable, "-m", "mpremote", "connect", args.port,
+                            "exec", preflight], check=True)
         subprocess.run(command, check=True)
     except subprocess.CalledProcessError as error:
         parser.exit(1, "Deployment failed: %s\n" % error)

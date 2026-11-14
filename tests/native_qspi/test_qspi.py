@@ -12,6 +12,27 @@ def raises(kind, function, *args, **kwargs):
 
 
 cases = 0
+assert amoled_qspi.API_VERSION == 2
+for cs in (9, 46):
+    for failure in (0, 3, 5, 6):
+        data = bytes(9000)
+        mock.configure(0x2c, data, True, failure, cs)
+        if failure == 3:
+            raises(OSError, amoled_qspi.Bus, cs=cs)
+        else:
+            bus = amoled_qspi.Bus(cs=cs)
+            if failure:
+                raises(OSError, bus.write, 0x2c, data, True)
+            else:
+                bus.write(0x2c, data, True)
+            bus.deinit()
+        gc.collect()
+        mock.check(not failure)
+        cases += 1
+
+for cs in (-1, 0, 10, 45, 49):
+    raises(ValueError, amoled_qspi.Bus, cs=cs)
+
 for quad in (False, True):
     for size in (0, 1, 3, 4, 4091, 4092, 4093, 8184, 8185, 19968):
         data = bytearray(size)
@@ -108,5 +129,5 @@ print("native QSPI:", cases, "cases passed")
 
 # Leave a rooted object live. The C harness invokes ESP32's gc_sweep_all hook
 # at exit and verifies that the native finaliser releases its resources.
-mock.configure(0, b"", False, 0)
-soft_reset_bus = amoled_qspi.Bus()
+mock.configure(0, b"", False, 0, 46)
+soft_reset_bus = amoled_qspi.Bus(cs=46)

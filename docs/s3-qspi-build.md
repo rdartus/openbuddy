@@ -1,4 +1,4 @@
-# Firmware S3 AMOLED QSPI experimental
+# Firmware S3 AMOLED v2 QSPI experimental
 
 ## Pourquoi un nouveau firmware
 
@@ -12,12 +12,20 @@ opcode `0x02`, pixels avec opcode `0x32`, en-tete sur une ligne, pixels sur quat
 Il est compile dans MicroPython : un simple `pc.deploy` sur le `.bin` officiel
 ne suffit plus. Le C6 n'est pas concerne et conserve son firmware officiel.
 
-Configuration : MicroPython **v1.29.0**, ESP-IDF **v5.5.2**, carte
-`ESP32_GENERIC_S3`, variante `SPIRAM_OCT`. SPI3_HOST appartient exclusivement au
-module natif (GPIO CS=9, CLK=10, D0..D3=11..14). Ne pas creer `machine.SPI(2)`
+Le depot constructeur **v2** utilise **CS=GPIO46**, et non GPIO9 comme l'ancien
+profil OpenBuddy. Selectionner `waveshare-s3-amoled-164-v2` : le nom du pilote
+SH8601/CO5300 ne permet pas de choisir le brochage.
+
+Configuration : MicroPython **v1.29.0**, ESP-IDF **v5.5.2**, carte dediee
+`OPENBUDDY_S3_AMOLED_V2`, derivee de `ESP32_GENERIC_S3` / `SPIRAM_OCT`, flash
+**16 Mio**, PSRAM octale **8 Mio**. SPI2 appartient exclusivement au
+module natif (GPIO CS=46 sur v2, CLK=10, D0..D3=11..14). Ne pas creer `machine.SPI(1)`
 en parallele. La SD conserve son bus separe. Les transferts sont synchrones,
 avec un tampon DMA interne de 4092 octets. L'affichage utilise deux buffers
 persistants de 255360 octets en memoire accessible au heap MicroPython.
+Le partitionnement MicroPython standard est conserve : application avant
+`0x200000`, puis VFS dynamique jusqu'a la fin de la flash, soit **14 Mio** sur
+une carte 16 Mio. Les animations resident dans ce VFS persistant, pas dans la PSRAM.
 
 **Experimental : une compilation et des tests simules ne valident pas l'ecran
 reel, les couleurs, la rotation ou les redemarrages.** Le tactile et l'IMU ne sont
@@ -25,17 +33,19 @@ pas utilises. Aucune animation proprietaire n'est distribuee avec le firmware.
 
 ## GitHub Actions
 
-Le workflow **Build S3 AMOLED QSPI firmware** compile sur les pushes vers `master`
+Le workflow **Build S3 AMOLED v2 QSPI firmware** compile sur les pushes vers `master`
 ou `feat/esp32-s3-amoled-164` et les pull requests modifiant les sources concernees.
 Il peut aussi etre lance manuellement
 une fois disponible sur la branche par defaut. Il produit un artefact
 `openbuddy-s3-amoled-qspi` conserve 30 jours :
 
-- `openbuddy-s3-amoled-qspi.bin` : MicroPython avec le module natif, sans application Python.
+- `openbuddy-s3-amoled-qspi.bin` : MicroPython avec le module natif **API v2**, sans
+  application Python. L'identite par defaut v2 est figee dans `openbuddy_build`.
 - `openbuddy-s3-qspi-files.zip` : fichiers Python correspondants, diagnostic et licences.
-- `BUILD.json` : commits des sources, etat sale/propre et empreintes des fichiers.
+- `BUILD.json` : commits, etat sale/propre, empreintes, profil v2, CS=46,
+  flash 16 Mio et `pet_storage: "internal"`.
 - `SHA256SUMS.txt` : empreintes des fichiers livres.
-- `INSTALL.md` : ce guide.
+- `INSTALL.md` : le README Windows S3, également inclus dans le ZIP des sources.
 
 Un tag pousse **`s3-qspi-*`** publie automatiquement une **prerelease**, uniquement
 apres la compilation reussie. Le workflow n'ecrase pas une release existante.
@@ -44,74 +54,15 @@ Les pull requests n'ont pas de droit d'ecriture dans les releases.
 
 ## Installation Windows uv
 
-Arreter le pont et tout outil serie. Recuperer l'artefact de la bonne execution
-GitHub (ou les fichiers de la prerelease), et extraire l'artefact dans un dossier
-local. Conserver le `.bin` et `SHA256SUMS.txt` ensemble. Verifier son empreinte :
+Suivre uniquement le **[README Windows ESP32-S3 AMOLED v2](../README-ESP32-S3-Windows.md)**.
+Il centralise le téléchargement de l’artefact, le contrôle du commit et du hash,
+le flashage, le test écran avec reset, les animations internes et le lancement USB.
+Le dépôt complet du même commit est nécessaire pour le pont et le plugin.
 
-```powershell
-Get-FileHash .\openbuddy-s3-amoled-qspi.bin -Algorithm SHA256
-Get-Content .\SHA256SUMS.txt
-```
-
-Comparer l'empreinte a la ligne du `.bin` avant de continuer. Utiliser uniquement
-un artefact provenant de votre depot et du commit attendu.
-
-Extraire `openbuddy-s3-qspi-files.zip` dans un dossier distinct et utiliser ses
-fichiers, ou utiliser le checkout du commit indique dans `BUILD.json`. Ne pas
-melanger l'ancien pilote SPI et le nouveau firmware QSPI.
-
-Depuis la racine des fichiers Python correspondants :
-
-```powershell
-uv python install 3.13
-uv venv --python 3.13
-uv pip install --python .venv\Scripts\python.exe -r pc\requirements.txt -r pc\requirements-assets.txt esptool
-uv run python -m serial.tools.list_ports -v
-$Port = "COM7" # Ajuster selon le port detecte
-```
-
-Si `.venv` existe deja, ne pas le recreer. Le chemin du `.bin` ci-dessous est a
-adapter a son dossier de telechargement.
-
-**Sauvegarder les fichiers importants avant tout flashage.** Pour remplacer le
-MicroPython officiel v1.29.0 SPIRAM_OCT par ce build de meme configuration,
-ne pas lancer `erase-flash`. Le VFS commence a `0x200000` ; le `.bin` combine
-reecrit cependant la table de partitions. Au demarrage, MicroPython recree
-l'entree VFS si necessaire. Cette preservation ne remplace pas une sauvegarde
-et ne s'applique pas a un ancien firmware au partitionnement different.
-
-```powershell
-uv run python -m esptool --chip esp32s3 --port $Port --baud 460800 write-flash 0 .\openbuddy-s3-amoled-qspi.bin
-```
-
-Si necessaire : maintenir BOOT, appuyer puis relacher RST, relacher BOOT.
-Apres flashage, appuyer sur RST, relister les ports et ajuster `$Port`.
-
-```powershell
-uv run python -m serial.tools.list_ports -v
-uv run python -m mpremote connect $Port exec "import amoled_qspi; print(amoled_qspi.Bus)"
-uv run python -m pc.deploy --port $Port --board waveshare-s3-amoled-164
-uv run python -m mpremote connect $Port run tools/test_amoled.py
-uv run python -m mpremote connect $Port reset
-```
-
-Le test doit afficher **rouge, vert, bleu, noir, blanc**, sur toute la dalle,
-pendant 1,5 seconde par couleur. Terminer par `reset` meme si le test echoue.
-Le test n'initialise ni BLE ni SD. S'il echoue ou si l'ecran reste noir, conserver
-la sortie du terminal avant de poursuivre ; ne pas multiplier les effacements.
-
-Si le test est concluant, installer les animations (ou garder celles deja presentes) :
-
-```powershell
-uv run python -m pc.pet convert
-uv run python -m pc.pet install build/pets/super-saiyan-goku-combat --port $Port --storage internal
-uv run python -m pc.buddy --serial $Port status
-```
-
-Ajouter `--replace` uniquement si un pack existe deja et doit etre remplace.
-Pour l'integration OpenCode, utiliser le depot complet et le guide
-`docs/windows-uv-apres-flash.md` : le ZIP firmware ne contient pas le pont OpenCode
-ni le bundle du plugin. Les fichiers d'assets restent independants du `.bin`.
+Le VFS commence à `0x200000`. Le `.bin` combiné réécrit la table de partitions ;
+MicroPython recrée l’entrée VFS au démarrage. La conservation des données depuis
+MicroPython v1.29.0 SPIRAM_OCT ne remplace pas une sauvegarde et ne s’applique pas
+à un firmware ayant un autre partitionnement. Ne pas effacer la flash par réflexe.
 
 ## Compilation Linux sans Docker
 
@@ -129,7 +80,9 @@ bash tools/build_s3_qspi.sh /path/to/micropython
 ```
 
 Le script controle les commits MicroPython et ESP-IDF attendus, compile puis
-produit `dist/s3-qspi/`. Aucune connexion USB n'est necessaire pour compiler.
+produit `dist/s3-qspi/`. La definition de carte et le manifeste frozen sont dans
+`native/boards/OPENBUDDY_S3_AMOLED_V2/` ; le dossier de compilation est
+`ports/esp32/build-OPENBUDDY_S3_AMOLED_V2`. Aucune connexion USB n'est necessaire pour compiler.
 La compilation C utilise l'environnement ESP-IDF, pas l'environnement uv du PC.
 
 Tests du module C sur ordinateur (pas une validation electrique) :

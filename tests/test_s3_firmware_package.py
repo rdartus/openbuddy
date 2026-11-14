@@ -14,12 +14,15 @@ SUPPORT_FILES = {
     "pc/__init__.py", "pc/deploy.py", "pc/pet.py", "pc/buddy.py",
     "pc/requirements.txt", "pc/requirements-assets.txt",
     "tools/test_amoled.py", "tools/prepare_pet_sd.py", "tools/verify_pet_sd.py",
-    "docs/s3-qspi-build.md", "docs/windows-uv-apres-flash.md", "THIRD_PARTY.md",
+    "README-ESP32-S3-Windows.md", "docs/s3-qspi-build.md",
+    "docs/windows-uv-apres-flash.md", "THIRD_PARTY.md",
 }
 NATIVE_FILES = {
     "native/amoled_qspi/amoled_qspi.c",
     "native/amoled_qspi/micropython.cmake",
 }
+NATIVE_FILES |= {"native/boards/OPENBUDDY_S3_AMOLED_V2/" + name for name in (
+    "mpconfigboard.cmake", "mpconfigboard.h", "sdkconfig.board", "manifest.py", "openbuddy_build.py")}
 SOURCE_FILES = {"c6lcd/" + name for name in DEPLOY_FILES} | SUPPORT_FILES | NATIVE_FILES
 LICENSES = {
     "licenses/MicroPython-LICENSE.txt": b"MicroPython license fixture\n",
@@ -35,10 +38,11 @@ class S3FirmwarePackageTests(unittest.TestCase):
         self.temporary = Path(temporary.name)
         self.micropython = self.temporary / "micropython"
         self.idf = self.temporary / "idf"
-        self.build = self.micropython / "ports/esp32/build-ESP32_GENERIC_S3-SPIRAM_OCT"
+        self.build = self.micropython / "ports/esp32/build-OPENBUDDY_S3_AMOLED_V2"
         self.build.mkdir(parents=True)
         self.idf.mkdir()
-        (self.build / "sdkconfig").write_text("CONFIG_SPIRAM_MODE_OCT=y\n", encoding="ascii")
+        (self.build / "sdkconfig").write_text(
+            "CONFIG_SPIRAM_MODE_OCT=y\nCONFIG_ESPTOOLPY_FLASHSIZE_16MB=y\n", encoding="ascii")
         (self.build / "micropython.map").write_text(
             "usermod/amoled_qspi.c.obj\n", encoding="ascii")
         (self.build / "firmware.bin").write_bytes(FIRMWARE)
@@ -72,7 +76,12 @@ class S3FirmwarePackageTests(unittest.TestCase):
         manifest_bytes = (self.output / "BUILD.json").read_bytes()
         manifest = json.loads(manifest_bytes)
         self.assertEqual(manifest, {
-            "board": "waveshare-s3-amoled-164",
+            "board": "waveshare-s3-amoled-164-v2",
+            "micropython_board": "OPENBUDDY_S3_AMOLED_V2",
+            "flash_bytes": 16 * 1024 * 1024,
+            "pet_storage": "internal",
+            "lcd_cs": 46,
+            "qspi_api_version": 2,
             "experimental": True,
             "openbuddy_commit": "a" * 40,
             "openbuddy_dirty": bool(self.dirty),
@@ -103,7 +112,7 @@ class S3FirmwarePackageTests(unittest.TestCase):
             for name, contents in LICENSES.items():
                 self.assertEqual(archive.read(name), contents)
         self.assertEqual((self.output / "INSTALL.md").read_bytes(),
-                         (self.root / "docs/s3-qspi-build.md").read_bytes())
+                          (self.root / "README-ESP32-S3-Windows.md").read_bytes())
         checksums = (self.output / "SHA256SUMS.txt").read_text(encoding="ascii").splitlines()
         expected_names = ["openbuddy-s3-amoled-qspi.bin", "openbuddy-s3-qspi-files.zip",
                           "BUILD.json", "INSTALL.md"]
@@ -164,6 +173,14 @@ class S3FirmwarePackageTests(unittest.TestCase):
     def test_missing_native_module_marker_is_rejected_before_outputs_or_git(self):
         (self.build / "micropython.map").write_text("other_module.c.obj\n", encoding="ascii")
         with self.assertRaisesRegex(ValueError, "native amoled_qspi module"):
+            packager.package(self.micropython, self.idf, self.output)
+        self.assertFalse(self.output.exists())
+        self.git_mock.assert_not_called()
+
+    def test_incorrect_flash_size_is_rejected_before_outputs_or_git(self):
+        (self.build / "sdkconfig").write_text(
+            "CONFIG_SPIRAM_MODE_OCT=y\nCONFIG_ESPTOOLPY_FLASHSIZE_4MB=y\n", encoding="ascii")
+        with self.assertRaisesRegex(ValueError, "16 MiB flash"):
             packager.package(self.micropython, self.idf, self.output)
         self.assertFalse(self.output.exists())
         self.git_mock.assert_not_called()

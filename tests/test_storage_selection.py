@@ -69,6 +69,23 @@ class BoardProfileTests(unittest.TestCase):
             with self.subTest(marker=marker), self.assertRaisesRegex(ValueError, "Unknown"):
                 self.profile(marker)
 
+    def test_v2_selects_vendor_cs_and_internal_storage_only(self):
+        cfg = self.profile("waveshare-s3-amoled-164-v2\n")
+        self.assertEqual((cfg.DISPLAY_DRIVER, cfg.LCD_CS, cfg.LCD_SPI_BAUD),
+                         ("co5300", 46, 40_000_000))
+        self.assertEqual(cfg.PET_STORAGE, "internal")
+        self.assertEqual((cfg.PET_DIRECTORY, cfg.PET_SELECTION),
+                         ("/openbuddy/pets", "/openbuddy/active.json"))
+
+    def test_frozen_build_default_is_used_only_without_saved_marker(self):
+        build = types.SimpleNamespace(BOARD_MODEL="waveshare-s3-amoled-164-v2")
+        cfg = load_module("board_config", {"openbuddy_build": build},
+                          open=Mock(side_effect=OSError("no marker")))
+        self.assertEqual((cfg.BOARD_MODEL, cfg.LCD_CS), (build.BOARD_MODEL, 46))
+        cfg = load_module("board_config", {"openbuddy_build": build},
+                          open=Mock(return_value=io.StringIO("waveshare-s3-amoled-164")))
+        self.assertEqual((cfg.BOARD_MODEL, cfg.LCD_CS), ("waveshare-s3-amoled-164", 9))
+
     def test_sd_only_bus_uses_s3_sd_controller_without_reconfiguring_lcd_bus(self):
         cfg = self.profile("waveshare-s3-amoled-164")
         machine = types.SimpleNamespace(Pin=Mock(OUT=1), SPI=Mock())
@@ -128,6 +145,19 @@ class StorageSelectionTests(unittest.TestCase):
         self.vfs.mount.assert_not_called()
         self.assertIsNone(self.storage.bus)
         self.assertFalse(self.storage.mounted)
+
+    def test_internal_only_profile_never_probes_sd_even_if_pack_is_missing(self):
+        self.cfg.PET_STORAGE = "internal"
+        internal = self.player(False)
+        self.player_factory.return_value = internal
+        self.assertIsNone(self.storage.load_player(self.lcd))
+        self.assertIsNone(self.storage.load_player(self.lcd, attempts=1))
+        self.assertFalse(self.storage.mount())
+        self.assert_player_paths("/openbuddy", "/openbuddy")
+        self.assertEqual(internal.close.call_count, 2)
+        self.bus_factory.assert_not_called()
+        self.card_factory.assert_not_called()
+        self.vfs.mount.assert_not_called()
 
     def test_invalid_internal_pack_is_closed_before_readonly_sd_fallback(self):
         internal, sd = self.player(False), self.player(True)

@@ -30,6 +30,17 @@ class DeployTests(unittest.TestCase):
         self.assertIn("board = None", script)
         self.assertIn("openbuddy-board.txt", script)
 
+    def test_v2_profile_is_written_and_requires_versioned_native_api(self):
+        with patch.object(sys, "argv", ["deploy", "--port", "auto", "--board",
+                                       "waveshare-s3-amoled-164-v2"]), \
+                patch.object(deploy.subprocess, "run") as run:
+            deploy.main()
+        preflight, transfer, reset = run.call_args_list
+        self.assertIn("Bus, API_VERSION", preflight.args[0][-1])
+        self.assertIn("API_VERSION < 2", preflight.args[0][-1])
+        self.assertIn("waveshare-s3-amoled-164-v2", transfer.args[0][-1])
+        self.assertEqual(reset.args[0][-1], "reset")
+
     def test_missing_native_module_prevents_all_writes_and_still_resets(self):
         for board in ([], ["--board", "waveshare-s3-amoled-164"]):
             with self.subTest(board=board), \
@@ -60,7 +71,9 @@ class DeployTests(unittest.TestCase):
 
         for selected, persisted, requires_native in (
                 ("waveshare-s3-amoled-164", None, True),
+                ("waveshare-s3-amoled-164-v2", None, True),
                 (None, "waveshare-s3-amoled-164\n", True),
+                (None, "waveshare-s3-amoled-164-v2\n", True),
                 (None, "waveshare-c6-lcd-147\n", False),
                 (None, None, False)):
             argv = ["deploy", "--port", "auto"]
@@ -82,4 +95,31 @@ class DeployTests(unittest.TestCase):
                     importer.assert_called_once()
                 else:
                     exec(script, environment)
-                    importer.assert_not_called()
+                    self.assertEqual([item.args[0] for item in importer.call_args_list],
+                                     ["openbuddy_build"] if persisted is None else [])
+
+    def test_frozen_default_and_native_api_are_checked_without_instantiating_bus(self):
+        import builtins
+        from types import SimpleNamespace
+        from unittest.mock import Mock
+
+        with patch.object(sys, "argv", ["deploy", "--port", "auto"]), \
+                patch.object(deploy.subprocess, "run") as run:
+            deploy.main()
+        script = run.call_args_list[0].args[0][-1]
+        for version in (1, 2):
+            bus = Mock(side_effect=AssertionError("Preflight must not initialize hardware"))
+            modules = {
+                "openbuddy_build": SimpleNamespace(BOARD_MODEL="waveshare-s3-amoled-164-v2"),
+                "amoled_qspi": SimpleNamespace(Bus=bus, API_VERSION=version),
+            }
+            importer = Mock(side_effect=lambda name, *args: modules[name])
+            environment = {"__builtins__": dict(vars(builtins), __import__=importer,
+                                                open=Mock(side_effect=OSError("No saved profile")))}
+            if version == 1:
+                with self.assertRaisesRegex(ImportError, "API_VERSION >= 2"):
+                    exec(script, environment)
+            else:
+                exec(script, environment)
+                self.assertEqual(environment["board"], "waveshare-s3-amoled-164-v2")
+            bus.assert_not_called()

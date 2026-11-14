@@ -1,4 +1,4 @@
-"""Hardware configuration for the Waveshare ESP32-C6-LCD-1.47 (non-touch).
+"""Hardware profiles for Waveshare C6 LCD and S3 AMOLED (legacy and v2).
 
 Single source of truth for pins and panel geometry. Imported by st7789.py and
 main.py, so a pin or offset change happens here only.
@@ -47,9 +47,15 @@ ORIENTATIONS = {
 ORDER = ("portrait", "landscape", "portrait_inv", "landscape_inv")
 DEFAULT_ORIENTATION = "landscape"
 
-# Explicit board identity: an ESP32-S3 alone does not identify its display wiring.
+# Stock firmware defaults to C6; dedicated builds freeze their board identity.
+# A saved explicit profile always wins. The chip model cannot identify PCB wiring.
 BOARD_MODEL = "waveshare-c6-lcd-147"
+try:
+    from openbuddy_build import BOARD_MODEL
+except ImportError:
+    pass
 DISPLAY_DRIVER = "st7789"
+PET_STORAGE = "auto"
 SD_SPI_ID = LCD_SPI_ID
 SD_SCLK = LCD_SCLK
 SD_MOSI = LCD_MOSI
@@ -58,7 +64,7 @@ try:
         BOARD_MODEL = handle.read(64).strip()
 except OSError:
     pass
-if BOARD_MODEL == "waveshare-s3-amoled-164":
+if BOARD_MODEL in ("waveshare-s3-amoled-164", "waveshare-s3-amoled-164-v2"):
     DISPLAY_DRIVER = "co5300"
     LCD_SCLK, LCD_MOSI, LCD_CS, LCD_RST = 10, 11, 9, 21
     LCD_SPI_BAUD = 40_000_000
@@ -67,5 +73,11 @@ if BOARD_MODEL == "waveshare-s3-amoled-164":
     SD_SPI_ID = 2
     SD_SCLK, SD_MOSI, SD_MISO, SD_CS = 41, 39, 40, 38
     PANEL_SHORT, PANEL_LONG, RAM_SHORT_OFFSET = 280, 456, 20
+    if BOARD_MODEL == "waveshare-s3-amoled-164-v2":
+        # Waveshare's v2 schematic and both vendor examples use GPIO46, not 9.
+        LCD_CS = 46
+        PET_STORAGE = "internal"
+        PET_DIRECTORY = "/openbuddy/pets"
+        PET_SELECTION = "/openbuddy/active.json"
 elif BOARD_MODEL != "waveshare-c6-lcd-147":
     raise ValueError("Unknown OpenBuddy board profile: " + BOARD_MODEL)

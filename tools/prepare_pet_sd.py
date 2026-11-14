@@ -34,7 +34,11 @@ def capacity(path):
 
 
 SELECTED_STORAGE = STORAGE
-if STORAGE == "auto":
+if getattr(cfg, "PET_STORAGE", "auto") == "internal":
+    if STORAGE == "sd":
+        raise ValueError("This board profile requires internal flash; SD storage is disabled")
+    SELECTED_STORAGE = "internal"
+elif STORAGE == "auto":
     model = str(getattr(cfg, "BOARD_MODEL", "")).upper()
     prefer_internal = (bool(model) and "C6" not in model
                        and getattr(cfg, "DISPLAY_DRIVER", "") == "co5300")

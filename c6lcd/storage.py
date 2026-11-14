@@ -1,4 +1,4 @@
-"""Read-only removable storage; failures never prevent the BLE companion booting."""
+"""Internal assets and optional read-only SD; missing packs do not prevent boot."""
 
 import time
 
@@ -15,6 +15,8 @@ class Storage:
 
     def mount(self, attempts=3, delay_ms=400):
         """A cold card can need several hundred ms after power-up to answer."""
+        if cfg.PET_STORAGE == "internal":
+            return False
         import vfs
 
         if self.bus is None:
@@ -43,7 +45,9 @@ class Storage:
         """Use a valid local pack first, without probing an absent SD card."""
         from pet_player import PetPlayer
 
-        for root in ("/openbuddy", cfg.SD_MOUNT + "/openbuddy"):
+        roots = (("/openbuddy",) if cfg.PET_STORAGE == "internal" else
+                 ("/openbuddy", cfg.SD_MOUNT + "/openbuddy"))
+        for root in roots:
             if root.startswith(cfg.SD_MOUNT + "/"):
                 if not self.mounted and not self.mount(attempts=attempts):
                     continue

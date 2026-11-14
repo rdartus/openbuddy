@@ -4,11 +4,11 @@
 **Waveshare ESP32-C6-LCD-1.47** : écran paysage 320×172, pet animé et halo RVB,
 synchronisés en **Local USB** ou en **Bluetooth**.
 
-Portage **Waveshare ESP32-S3-Touch-AMOLED-1.64 (280x456, 16 Mo flash,
-8 Mo PSRAM)** : installation possible **sans microSD**, avec un firmware
+Portage **Waveshare ESP32-S3-Touch-AMOLED-1.64 v2 (280x456, CS GPIO46, 16 Mo flash,
+8 Mo PSRAM)** : pet **en flash interne, sans microSD ni repli TF**, avec un firmware
 experimental integrant le module natif **`amoled_qspi`**, pas le `.bin` MicroPython
-officiel. Voir le [guide S3 AMOLED](docs/s3-amoled.md) et le
-[guide firmware QSPI](docs/s3-qspi-build.md). Ce portage reste a valider sur la carte reelle.
+officiel. **[Installation Windows ESP32-S3 : suivre ce README](README-ESP32-S3-Windows.md).**
+Ce portage reste a valider sur la carte reelle.
 
 ![Démonstration OpenBuddy : les événements OpenCode synchronisent les écrans et le pet Goku en Local USB ou Bluetooth.](docs/media/openbuddy-demo.gif)
 
@@ -75,21 +75,19 @@ pas MicroPython : il faut donc préparer la carte une première fois.
 | Carte | Firmware requis | Profil `pc.deploy --board` |
 |---|---|---|
 | Waveshare ESP32-C6-LCD-1.47 non tactile | MicroPython officiel `ESP32_GENERIC_C6` 1.29.0 | `waveshare-c6-lcd-147` |
-| Waveshare ESP32-S3-Touch-AMOLED-1.64 | Build OpenBuddy MicroPython 1.29.0 + `amoled_qspi` natif, `ESP32_GENERIC_S3` / `SPIRAM_OCT` ([guide](docs/s3-qspi-build.md)) | `waveshare-s3-amoled-164` |
+| Waveshare ESP32-S3-Touch-AMOLED-1.64 **v2** | Build OpenBuddy MicroPython 1.29.0 + `amoled_qspi` API v2, `OPENBUDDY_S3_AMOLED_V2`, PSRAM octale ([guide](docs/s3-qspi-build.md)) | `waveshare-s3-amoled-164-v2` |
+
+L'ancien profil `waveshare-s3-amoled-164` reste disponible pour la revision CS=GPIO9 ;
+ne pas le choisir pour la v2. Le build GitHub cible desormais explicitement la v2.
 
 **Ne pas utiliser le firmware C6 sur le S3**, ni la variante S3 sans PSRAM octale
 pour cette carte S3R8. Vérifier la référence exacte du matériel avant de commencer.
 
-Pour le **S3 AMOLED, sans microSD**, commencer par le
-[parcours PC Windows apres git pull](docs/windows-local-qspi.md), ou le
-[guide firmware QSPI](docs/s3-qspi-build.md#installation-windows-uv), **meme si
-MicroPython officiel est deja flashe**. Il centralise le telechargement de
-l'artefact, son hash et le reflashage avec les fichiers Python correspondants.
-L'ordre est : `import amoled_qspi`, preflight de `pc.deploy`,
-`tools/test_amoled.py`, puis `reset` meme en cas d'echec, avant les animations.
-Poursuivre avec [Windows apres flashage](docs/windows-uv-apres-flash.md) pour
-l'integration OpenCode. Le portage reste a valider sur la carte reelle ; tactile
-et IMU ne sont pas utilises. Le C6 conserve son firmware officiel.
+Pour le **S3 AMOLED v2, sans microSD**, suivre uniquement le
+**[README Windows ESP32-S3](README-ESP32-S3-Windows.md)** : preparation du PC,
+telechargement du build, flashage, test ecran, pet en flash et lancement USB.
+Ce parcours s'applique aussi si MicroPython officiel est deja flashe.
+Les instructions C6 ci-dessous ne concernent pas le S3.
 
 Pour le **C6**, depuis la racine du dépôt dans PowerShell :
 

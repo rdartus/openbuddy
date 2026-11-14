@@ -17,7 +17,7 @@ static struct {
     bool bus, device, acquired, external, cs_low;
     void *dma;
     int failure, calls, releases, removes, frees, gpio_calls;
-    int command;
+    int command, cs;
     bool quad;
     size_t length, offset;
     uint8_t expected[40000];
@@ -52,7 +52,7 @@ void heap_caps_free(void *p) {
 }
 
 esp_err_t spi_bus_initialize(int host, const spi_bus_config_t *c, int dma) {
-    CHECK(host == SPI3_HOST && dma == SPI_DMA_CH_AUTO);
+    CHECK(host == SPI2_HOST && dma == SPI_DMA_CH_AUTO);
     CHECK(c->sclk_io_num == 10 && c->mosi_io_num == 11 && c->miso_io_num == 12);
     CHECK(c->quadwp_io_num == 13 && c->quadhd_io_num == 14);
     CHECK(c->data4_io_num == -1 && c->data5_io_num == -1);
@@ -67,10 +67,10 @@ esp_err_t spi_bus_initialize(int host, const spi_bus_config_t *c, int dma) {
 }
 
 esp_err_t spi_bus_add_device(int host, const spi_device_interface_config_t *c, spi_device_handle_t *device) {
-    CHECK(host == SPI3_HOST && mock.bus && !mock.device);
+    CHECK(host == SPI2_HOST && mock.bus && !mock.device);
     CHECK(c->command_bits == 8 && c->address_bits == 24 && c->dummy_bits == 0);
     CHECK(c->mode == 0 && c->clock_speed_hz > 0);
-    CHECK(c->spics_io_num == 9 && c->queue_size == 1 && c->flags == SPI_DEVICE_HALFDUPLEX);
+    CHECK(c->spics_io_num == mock.cs && c->queue_size == 1 && c->flags == SPI_DEVICE_HALFDUPLEX);
     if (mock.failure == 3) {
         return ESP_ERR_NO_MEM;
     }
@@ -90,7 +90,7 @@ esp_err_t spi_bus_remove_device(spi_device_handle_t device) {
 }
 
 esp_err_t spi_bus_free(int host) {
-    CHECK(host == SPI3_HOST && mock.bus && !mock.device && !mock.acquired && !mock.external);
+    CHECK(host == SPI2_HOST && mock.bus && !mock.device && !mock.acquired && !mock.external);
     if (mock.failure == 11) {
         return ESP_ERR_INVALID_STATE;
     }
@@ -158,17 +158,17 @@ esp_err_t spi_device_polling_transmit(spi_device_handle_t device, spi_transactio
 }
 
 int gpio_reset_pin(int pin) {
-    CHECK(pin == 9 && !mock.device && !mock.external);
+    CHECK(pin == mock.cs && !mock.device && !mock.external);
     mock.gpio_calls++;
     return ESP_OK;
 }
 int gpio_set_level(int pin, int level) {
-    CHECK(pin == 9 && level == 1 && !mock.external);
+    CHECK(pin == mock.cs && level == 1 && !mock.external);
     mock.cs_low = false;
     return ESP_OK;
 }
 int gpio_set_direction(int pin, int mode) {
-    CHECK(pin == 9 && mode == GPIO_MODE_OUTPUT && !mock.external);
+    CHECK(pin == mock.cs && mode == GPIO_MODE_OUTPUT && !mock.external);
     return ESP_OK;
 }
 
@@ -181,6 +181,7 @@ static mp_obj_t test_configure(size_t n_args, const mp_obj_t *args) {
     CHECK(!mock.bus && !mock.device && !mock.acquired && mock.dma == NULL);
     memset(&mock, 0, sizeof(mock));
     mock.command = mp_obj_get_int(args[0]);
+    mock.cs = n_args == 5 ? mp_obj_get_int(args[4]) : 9;
     mp_buffer_info_t buffer;
     mp_get_buffer_raise(args[1], &buffer, MP_BUFFER_READ);
     CHECK(buffer.len <= sizeof(mock.expected));
@@ -192,7 +193,7 @@ static mp_obj_t test_configure(size_t n_args, const mp_obj_t *args) {
     mock.failure = mp_obj_get_int(args[3]);
     return mp_const_none;
 }
-static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(test_configure_obj, 4, 4, test_configure);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(test_configure_obj, 4, 5, test_configure);
 
 static mp_obj_t test_failure(mp_obj_t failure) {
     mock.failure = mp_obj_get_int(failure);

@@ -141,6 +141,26 @@ class InstallerTests(unittest.TestCase):
         self.assertFalse((self.root / "openbuddy").exists())
         self.assertIn("falling back to SD", self.device.output.getvalue())
 
+    def test_v2_auto_uses_internal_without_sd_fallback(self):
+        self.device.cfg.PET_STORAGE = "internal"
+        self.device.run(PREPARE)
+        self.assertEqual(self.device.env["SELECTED_STORAGE"], "internal")
+        self.device.machine.Pin.assert_not_called()
+        self.device.vfs.mount.assert_not_called()
+
+    def test_v2_insufficient_flash_or_explicit_sd_fails_before_hardware_and_writes(self):
+        for storage, free, message in (("auto", 0, "Insufficient internal flash"),
+                                       ("sd", 8 * 1024 * 1024, "requires internal flash")):
+            with self.subTest(storage=storage):
+                self.device.cfg.PET_STORAGE = "internal"
+                self.device.env["STORAGE"] = storage
+                self.device.free["/"] = free
+                with self.assertRaisesRegex(ValueError, message):
+                    self.device.run(PREPARE)
+        self.device.os.mkdir.assert_not_called()
+        self.device.machine.Pin.assert_not_called()
+        self.device.vfs.mount.assert_not_called()
+
     def test_s3_sd_uses_separate_pins_and_native_slot_two(self):
         self.device.cfg.SD_SPI_ID = 2
         self.device.cfg.SD_SCLK = 41

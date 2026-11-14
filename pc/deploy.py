@@ -13,8 +13,9 @@ FILES = ("board_config.py", "shared_spi.py", "sdcard_spi.py", "storage.py",
 def main():
     parser = argparse.ArgumentParser(description="Deploy OpenBuddy MicroPython files without erasing flash")
     parser.add_argument("--port", default="COM9")
-    parser.add_argument("--board", choices=("waveshare-c6-lcd-147", "waveshare-s3-amoled-164"),
-                        help="Persist a board profile; omitted keeps the current profile (C6 on first install)")
+    parser.add_argument("--board", choices=("waveshare-c6-lcd-147", "waveshare-s3-amoled-164",
+                                           "waveshare-s3-amoled-164-v2"),
+                        help="Persist a board profile; omitted keeps the saved profile or build default")
     args = parser.parse_args()
     root = Path(__file__).resolve().parents[1] / "c6lcd"
     command = [sys.executable, "-u", "-m", "mpremote", "connect", args.port]
@@ -34,12 +35,18 @@ def main():
                 "        with open('openbuddy-board.txt') as f: board = f.read(64).strip()\n"
                 "    except OSError:\n"
                 "        board = 'waveshare-c6-lcd-147'\n"
-                "if board == 'waveshare-s3-amoled-164':\n"
+                "        try:\n"
+                "            from openbuddy_build import BOARD_MODEL\n"
+                "            board = BOARD_MODEL\n"
+                "        except ImportError:\n"
+                "            pass\n"
+                "if board in ('waveshare-s3-amoled-164', 'waveshare-s3-amoled-164-v2'):\n"
                 "    try:\n"
-                "        from amoled_qspi import Bus\n"
+                "        from amoled_qspi import Bus, API_VERSION\n"
+                "        if API_VERSION < 2: raise ImportError('Outdated QSPI firmware')\n"
                 "    except ImportError:\n"
                 "        raise ImportError('Install the OpenBuddy ESP32-S3 QSPI MicroPython "
-                "firmware with native amoled_qspi and octal PSRAM before deploying; "
+                "firmware with native amoled_qspi API_VERSION >= 2 and octal PSRAM before deploying; "
                 "stock MicroPython cannot drive this panel')\n"
             )
             subprocess.run([sys.executable, "-m", "mpremote", "connect", args.port,

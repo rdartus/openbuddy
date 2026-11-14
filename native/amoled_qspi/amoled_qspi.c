@@ -14,12 +14,14 @@
 
 #define QSPI_BLOCK_SIZE (4092)
 #define QSPI_CS (9)
-#define QSPI_HOST SPI3_HOST
+// Match the Waveshare v2 demo; leave SPI3 available for the separate SD bus.
+#define QSPI_HOST SPI2_HOST
 
 typedef struct {
     mp_obj_base_t base;
     spi_device_handle_t device;
     uint8_t *dma;
+    int cs;
     bool owns_bus;
     bool closed;
 } amoled_qspi_bus_t;
@@ -39,12 +41,12 @@ static esp_err_t amoled_qspi_cleanup(amoled_qspi_bus_t *self) {
         }
         self->device = NULL;
         // Also terminate a stream whose last successful block kept CS active.
-        result = gpio_reset_pin(QSPI_CS);
-        err = gpio_set_level(QSPI_CS, 1);
+        result = gpio_reset_pin(self->cs);
+        err = gpio_set_level(self->cs, 1);
         if (result == ESP_OK) {
             result = err;
         }
-        err = gpio_set_direction(QSPI_CS, GPIO_MODE_OUTPUT);
+        err = gpio_set_direction(self->cs, GPIO_MODE_OUTPUT);
         if (result == ESP_OK) {
             result = err;
         }
@@ -67,16 +69,22 @@ static mp_obj_t amoled_qspi_make_new(const mp_obj_type_t *type, size_t n_args,
     size_t n_kw, const mp_obj_t *all_args) {
     static const mp_arg_t allowed[] = {
         { MP_QSTR_baudrate, MP_ARG_INT, {.u_int = 10000000} },
+        { MP_QSTR_cs, MP_ARG_KW_ONLY | MP_ARG_INT, {.u_int = QSPI_CS} },
     };
     mp_arg_val_t args[MP_ARRAY_SIZE(allowed)];
     mp_arg_parse_all_kw_array(n_args, n_kw, all_args, MP_ARRAY_SIZE(allowed), allowed, args);
     if (args[0].u_int <= 0 || args[0].u_int > 80000000) {
         mp_raise_ValueError(MP_ERROR_TEXT("baudrate must be 1..80000000"));
     }
+    // Restrict selection to the legacy and vendor-v2 OpenBuddy profiles.
+    if (args[1].u_int != 9 && args[1].u_int != 46) {
+        mp_raise_ValueError(MP_ERROR_TEXT("cs must be 9 (legacy) or 46 (v2)"));
+    }
 
     amoled_qspi_bus_t *self = mp_obj_malloc_with_finaliser(amoled_qspi_bus_t, type);
     self->device = NULL;
     self->dma = NULL;
+    self->cs = args[1].u_int;
     self->owns_bus = false;
     self->closed = true;
     self->dma = heap_caps_malloc(QSPI_BLOCK_SIZE, MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
@@ -105,7 +113,7 @@ static mp_obj_t amoled_qspi_make_new(const mp_obj_type_t *type, size_t n_args,
             .address_bits = 24,
             .clock_speed_hz = args[0].u_int,
             .mode = 0,
-            .spics_io_num = QSPI_CS,
+            .spics_io_num = self->cs,
             .queue_size = 1,
             .flags = SPI_DEVICE_HALFDUPLEX,
         };
@@ -215,6 +223,7 @@ static MP_DEFINE_CONST_OBJ_TYPE(amoled_qspi_bus_type, MP_QSTR_Bus, MP_TYPE_FLAG_
 static const mp_rom_map_elem_t amoled_qspi_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_amoled_qspi) },
     { MP_ROM_QSTR(MP_QSTR_Bus), MP_ROM_PTR(&amoled_qspi_bus_type) },
+    { MP_ROM_QSTR(MP_QSTR_API_VERSION), MP_ROM_INT(2) },
 };
 static MP_DEFINE_CONST_DICT(amoled_qspi_globals, amoled_qspi_globals_table);
 

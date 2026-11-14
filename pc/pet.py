@@ -213,7 +213,8 @@ def main():
     installation = commands.add_parser("install", help="Copy and verify a pack on ESP32 storage via USB")
     installation.add_argument("pack")
     installation.add_argument("--port", default="auto")
-    installation.add_argument("--storage", choices=("auto", "sd", "internal"), default="auto")
+    installation.add_argument("--storage", choices=("auto", "sd", "internal"), default="auto",
+                              help="Follow the board policy by default; S3 AMOLED v2 requires internal flash")
     installation.add_argument("--replace", action="store_true", help="Replace an existing OpenBuddy pack")
     args = parser.parse_args()
     try:

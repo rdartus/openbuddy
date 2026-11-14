@@ -26,9 +26,12 @@ def load_module(name, dependencies=None, directory=FIRMWARE, **overrides):
 
 
 class AMOLEDTests(unittest.TestCase):
+    BOARD = "waveshare-s3-amoled-164"
+
     def setUp(self):
         cfg = load_module("board_config", open=Mock(return_value=io.StringIO(
-            "waveshare-s3-amoled-164\n")))
+            self.BOARD + "\n")))
+        self.cfg = cfg
         self.pins = {}
         self.events = []
         self.buses = []
@@ -105,7 +108,8 @@ class AMOLEDTests(unittest.TestCase):
             (0x29, None, False),
         ])
         self.assertEqual(self.transactions[-1], (0x51, b"\x80", False))
-        self.assertEqual(self.lcd.bus.options, {"baudrate": 40_000_000})
+        self.assertEqual(self.lcd.bus.options, {"baudrate": self.cfg.LCD_SPI_BAUD,
+                                              "cs": self.cfg.LCD_CS})
         self.assertEqual(set(self.pins), {21})
 
     def test_initial_clear_covers_panel_with_twenty_column_offset(self):
@@ -285,7 +289,7 @@ class AMOLEDTests(unittest.TestCase):
         lcd = Mock()
         constructor = Mock(return_value=lcd)
         clock = types.SimpleNamespace(sleep_ms=Mock())
-        cfg = types.SimpleNamespace(BOARD_MODEL="waveshare-s3-amoled-164",
+        cfg = types.SimpleNamespace(BOARD_MODEL=self.BOARD,
                                     DISPLAY_DRIVER="co5300")
         tool = load_module("test_amoled", {
             "board_config": cfg, "time": clock,
@@ -308,6 +312,13 @@ class AMOLEDTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "board profile"):
                 tool.main()
         constructor.assert_not_called()
+
+
+class AMOLEDV2Tests(AMOLEDTests):
+    BOARD = "waveshare-s3-amoled-164-v2"
+
+    def test_v2_bus_selects_gpio46_at_vendor_clock(self):
+        self.assertEqual(self.lcd.bus.options, {"baudrate": 40_000_000, "cs": 46})
 
 
 if __name__ == "__main__":

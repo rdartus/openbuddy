@@ -9,9 +9,9 @@ import board_config as cfg
 
 
 def main():
-    if (cfg.BOARD_MODEL != "waveshare-s3-amoled-164"
+    if (cfg.BOARD_MODEL not in ("waveshare-s3-amoled-164", "waveshare-s3-amoled-164-v2")
             or cfg.DISPLAY_DRIVER != "co5300"):
-        raise RuntimeError("Select the waveshare-s3-amoled-164 board profile first")
+        raise RuntimeError("Select the matching waveshare-s3-amoled-164[-v2] board profile first")
     from co5300 import LCD, rgb
 
     lcd = None

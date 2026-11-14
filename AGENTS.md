@@ -3,7 +3,7 @@
 Petit appareil physique (ESP32) qui rend OpenCode interactif dans le monde réel : il signale quand OpenCode attend une réponse et affiche son état (pet animé depuis la microSD ou la flash interne sur S3). Aucune action n'est validée depuis l'appareil pour l'instant.
 
 Lire d'abord `docs/hardware.md` (matériel, brochage, pièges), `docs/opencode-events.md` et `docs/animations.md` avant de modifier le firmware ou l'intégration.
-Pour le S3 AMOLED, lire aussi [le guide firmware QSPI](docs/s3-qspi-build.md), reference pour les versions, artefacts, hashes, reflashage, compilation et tests natifs. Ne pas dupliquer ces procedures dans les autres guides.
+Pour le S3 AMOLED, lire aussi [le guide firmware QSPI](docs/s3-qspi-build.md), reference technique pour les versions, artefacts, compilation et tests natifs. Le [README Windows S3](README-ESP32-S3-Windows.md) est le parcours unique d'installation, verification des hashes et reflashage ; les anciens guides Windows y renvoient. Ne pas dupliquer ces procedures dans les autres guides.
 
 ## Conventions
 
@@ -17,7 +17,7 @@ Pour le S3 AMOLED, lire aussi [le guide firmware QSPI](docs/s3-qspi-build.md), r
 ## Structure
 
 - `c6lcd/` : firmware **MicroPython** de la Waveshare ESP32-C6-LCD-1.47. `board_config.py` = broches et géométrie (source unique), `st7789.py` = driver écran, `main.py`/`companion.py` = boucle principale, `buddy_ble.py` = HID/GATT/appairage, `buddy_ui.py` = écran et halo, `buddy_protocol.py` = protocole partagé PC/carte.
-- `c6lcd/co5300.py` : pilote S3 AMOLED utilisant `amoled_qspi` natif (sources dans `native/`). Anciennes demos Waveshare : SH8601 ; nouvelles : CO5300. Le nom du module Python est conserve pour les profils existants, sans detection confirmee du silicium. Registres sur une ligne, pixels sur quatre ; SPI3_HOST est reserve au module natif, ne pas creer `machine.SPI(2)` en parallele. SD sur bus separe.
+- `c6lcd/co5300.py` : pilote S3 AMOLED utilisant `amoled_qspi` natif (sources dans `native/`). Anciennes demos Waveshare : SH8601 ; nouvelles : CO5300. Le nom du module Python est conserve pour les profils existants, sans detection confirmee du silicium. Registres sur une ligne, pixels sur quatre ; SPI2_HOST est reserve au module natif comme dans la demo v2, ne pas creer `machine.SPI(1)` en parallele. SD sur bus separe.
 - `c6lcd/buddy_usb.py` : transport USB série, même protocole JSON que BLE, sans HID ni remontée des boutons. Le firmware conserve les deux transports ; USB prend l'affichage tant que sa lease est active, sauf appairage BLE prioritaire.
 - `c6lcd/orientation_demo.py` : ancienne démo conservée.
 - `c6lcd/shared_spi.py`, `sdcard_spi.py`, `storage.py`, `pet_player.py` : bus écran/SD partagé, carte en lecture seule, lecteur RGB565 à un buffer.
@@ -38,6 +38,7 @@ Pour le S3 AMOLED, lire aussi [le guide firmware QSPI](docs/s3-qspi-build.md), r
 
 - Cible : C6-LCD-1.47, MicroPython 1.29, écran **landscape 320×172** (USB-C à gauche par défaut), BLE HID + GATT et USB série, appairage authentifié avec clés persistantes.
 - Portage S3-Touch-AMOLED-1.64 experimental : firmware natif obligatoire, installation sans microSD possible. Meme apres un flash officiel reussi, commencer par le guide QSPI, puis `import amoled_qspi`, preflight de `pc.deploy`, `tools/test_amoled.py` et `reset` meme en cas d'echec, avant les animations. Conserver les sorties si le test echoue ; ne pas multiplier les effacements.
+- Revision S3 AMOLED **v2** : profil `waveshare-s3-amoled-164-v2`, CS=GPIO46 (ancien profil : GPIO9), 40 MHz, pet exclusivement interne (`PET_STORAGE = "internal"`), aucun montage TF meme sans pack. Build dedie `native/boards/OPENBUDDY_S3_AMOLED_V2`, flash 16 Mio, PSRAM octale, identite frozen ; module natif API v2 et CS configurable obligatoires. Un marqueur existant reste prioritaire : migration avec `pc.deploy --board waveshare-s3-amoled-164-v2`.
 - Microprogramme **0.4.0** (kits publiés en 1.2.0 : firmware 0.3.0). Pet lu depuis une microSD FAT32 partagée avec l'écran (un buffer de 19 968 octets).
 - Plugin `openbuddy.events` autonome (SDK 2.2.5 embarqué, sans Node/npm), réservé au service OpenCode local géré. Éviter de charger en même temps les copies globale et projet (`Duplicate plugin ID`).
 - Pont Python 3.11+, sons et toasts Windows indépendants du BLE. Utiliser le runtime WinRT 4.1.0 ; ne pas installer Windows-Toasts 1.3.1 (impose un runtime 3.x incompatible).

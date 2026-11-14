@@ -1,17 +1,19 @@
 # Matériel OpenBuddy
 
-La Waveshare **ESP32-S3-Touch-AMOLED-1.64** dispose aussi d'un profil dedie,
+La Waveshare **ESP32-S3-Touch-AMOLED-1.64 v2** dispose aussi d'un profil dedie,
 d'un pilote Python `co5300` et du stockage des animations en flash interne.
 Elle exige un firmware MicroPython personnalise avec **`amoled_qspi` natif** :
 le `.bin` officiel et un simple `pc.deploy` ne suffisent pas. Les anciennes demos
 Waveshare nomment le pilote SH8601, les nouvelles CO5300 ; cela ne confirme pas
 une detection du silicium. Les pixels passent en QSPI sur D0..D3, pas en SPI simple.
-SPI3_HOST est reserve au module natif : ne pas creer `machine.SPI(2)` en parallele ;
+SPI2_HOST est reserve au module natif : ne pas creer `machine.SPI(1)` en parallele ;
 la SD utilise un bus separe. Voir le [guide S3 AMOLED](s3-amoled.md) pour le brochage
 et le stockage, et le [guide firmware QSPI](s3-qspi-build.md) pour l'artefact,
 son hash, le reflashage et le test plein ecran suivi d'un reset avant les animations.
 Ce portage est experimental et reste a valider sur materiel. Les regles C6
 ci-dessous ne changent pas : son firmware reste officiel.
+Attention aux revisions : **v2 = CS GPIO46**, ancien profil = GPIO9. Le build v2
+utilise la flash interne pour le pet, sans acces TF ni repli SD ; voir le guide S3.
 
 ## Carte principale
 

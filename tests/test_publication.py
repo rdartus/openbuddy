@@ -22,6 +22,13 @@ class PublicationTests(unittest.TestCase):
         self.assertEqual(selected["AGENTS.md"], ROOT / "AGENTS.md")
         self.assertNotIn("distribution/public/AGENTS.md", selected)
 
+    def test_v2_board_build_inputs_are_published(self):
+        selected = files()
+        self.assertIn("README-ESP32-S3-Windows.md", selected)
+        for name in ("mpconfigboard.cmake", "mpconfigboard.h", "sdkconfig.board",
+                     "manifest.py", "openbuddy_build.py"):
+            self.assertIn("native/boards/OPENBUDDY_S3_AMOLED_V2/" + name, selected)
+
     def test_agents_guide_contains_no_private_identifiers(self):
         text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
         self.assertIsNone(re.search(r"(?i)\b[0-9a-f]{2}(:[0-9a-f]{2}){5}\b", text))

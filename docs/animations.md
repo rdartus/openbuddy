@@ -2,11 +2,13 @@
 
 Les animations peuvent aussi etre installees en **flash interne**, sous
 `/openbuddy/`, avec `pc.pet install ... --storage internal`. Le mode par defaut
-`--storage auto` privilegie l'interne sur le profil S3 AMOLED si l'espace libre
+`--storage auto` **impose l'interne sur le profil S3 AMOLED v2**, sans acces TF et
+sans repli SD si la flash est pleine. L'ancien profil S3 AMOLED privilegie l'interne si l'espace libre
 reel suffit, sinon la SD ; il conserve la SD sur le profil C6. Une reserve de
 256 Kio et les allocations du filesystem sont comprises dans le controle.
 Le lecteur utilise un pack interne valide en priorite, puis la SD, puis le robot.
-Un pack interne valide evite tout acces a la SD. Les SHA-256 sont verifies pour
+Sur la v2, meme un pack absent ou invalide n'entraine aucun acces a la SD.
+Un pack interne valide evite aussi la SD sur les autres profils. Les SHA-256 sont verifies pour
 les deux destinations. Voir le [guide S3](s3-amoled.md) pour l'installation complete.
 
 ## Fonctionnement

@@ -1,10 +1,11 @@
-name: Build S3 AMOLED QSPI firmware
+name: Build S3 AMOLED v2 QSPI firmware
 
 on:
   workflow_dispatch:
   pull_request:
     paths:
       - '.github/workflows/s3-qspi.yml'
+      - 'README-ESP32-S3-Windows.md'
       - 'native/**'
       - 'c6lcd/**'
       - 'pc/**'
@@ -20,6 +21,7 @@ on:
     tags: ['s3-qspi-*']
     paths:
       - '.github/workflows/s3-qspi.yml'
+      - 'README-ESP32-S3-Windows.md'
       - 'native/**'
       - 'c6lcd/**'
       - 'pc/**'
@@ -73,11 +75,13 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Configure Git safe directory
-        run: git config --global --add safe.directory /__w/openbuddy/openbuddy
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Fetch MicroPython sources
         run: git clone --depth 1 --branch v1.29.0 https://github.com/micropython/micropython.git /tmp/micropython
       - name: Test native transport on host
         run: make -f tests/native_qspi/Makefile MICROPYTHON=/tmp/micropython
+      - name: Check native transport against ESP-IDF headers
+        run: MICROPYTHON=/tmp/micropython IDF_PATH=/opt/esp/idf sh tests/native_qspi/check_idf_headers.sh
       - name: Build firmware and package matching Python files
         run: |
           . /opt/esp/idf/export.sh
@@ -108,5 +112,5 @@ jobs:
           COMMIT: ${{ github.sha }}
         run: |
           gh release create "$TAG" firmware/* --verify-tag --target "$COMMIT" --prerelease \
-            --title "S3 AMOLED QSPI $TAG (experimental)" \
-            --notes "Experimental MicroPython 1.29.0 / ESP-IDF 5.5.2 firmware with native QSPI. Hardware validation required. Download the matching source ZIP and follow its Windows uv instructions. No pet artwork is included."
+            --title "S3 AMOLED v2 QSPI $TAG (experimental)" \
+            --notes "Waveshare S3 Touch AMOLED 1.64 v2 (CS GPIO46), 16 MiB flash, octal PSRAM. Experimental MicroPython 1.29.0 / ESP-IDF 5.5.2 with native QSPI API v2. Pet storage is internal flash only; install artwork separately via pc.pet. Hardware validation required. Download the matching source ZIP and follow its Windows uv instructions. No pet artwork is included."

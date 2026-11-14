@@ -26,7 +26,7 @@ class LCD(TextRenderer):
     def __init__(self, orientation="landscape"):
         self.bus = None
         try:
-            self.bus = amoled_qspi.Bus(baudrate=cfg.LCD_SPI_BAUD)
+            self.bus = amoled_qspi.Bus(baudrate=cfg.LCD_SPI_BAUD, cs=cfg.LCD_CS)
             self.rst = Pin(cfg.LCD_RST, Pin.OUT, value=1)
             # Shadow preserves aligned neighbours; scratch packs one native RAMWR.
             # Two persistent 255360-byte buffers fit the board's 8 MB PSRAM.

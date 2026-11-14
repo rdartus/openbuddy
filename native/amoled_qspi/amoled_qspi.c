@@ -14,6 +14,7 @@
 
 #define QSPI_BLOCK_SIZE (4092)
 #define QSPI_CS (9)
+#define QSPI_HOST SPI3_HOST
 
 typedef struct {
     mp_obj_base_t base;
@@ -49,7 +50,7 @@ static esp_err_t amoled_qspi_cleanup(amoled_qspi_bus_t *self) {
         }
     }
     if (self->owns_bus) {
-        esp_err_t err = spi_bus_free(SPI2_HOST);
+        esp_err_t err = spi_bus_free(QSPI_HOST);
         if (err != ESP_OK) {
             return err;
         }
@@ -96,7 +97,7 @@ static mp_obj_t amoled_qspi_make_new(const mp_obj_type_t *type, size_t n_args,
         .max_transfer_sz = QSPI_BLOCK_SIZE,
         .flags = SPICOMMON_BUSFLAG_MASTER | SPICOMMON_BUSFLAG_QUAD,
     };
-    esp_err_t err = spi_bus_initialize(SPI2_HOST, &bus_config, SPI_DMA_CH_AUTO);
+    esp_err_t err = spi_bus_initialize(QSPI_HOST, &bus_config, SPI_DMA_CH_AUTO);
     if (err == ESP_OK) {
         self->owns_bus = true;
         const spi_device_interface_config_t device_config = {
@@ -108,7 +109,7 @@ static mp_obj_t amoled_qspi_make_new(const mp_obj_type_t *type, size_t n_args,
             .queue_size = 1,
             .flags = SPI_DEVICE_HALFDUPLEX,
         };
-        err = spi_bus_add_device(SPI2_HOST, &device_config, &self->device);
+        err = spi_bus_add_device(QSPI_HOST, &device_config, &self->device);
     }
     if (err != ESP_OK) {
         amoled_qspi_cleanup(self);

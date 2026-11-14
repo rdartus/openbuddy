@@ -13,8 +13,8 @@ Il est compile dans MicroPython : un simple `pc.deploy` sur le `.bin` officiel
 ne suffit plus. Le C6 n'est pas concerne et conserve son firmware officiel.
 
 Configuration : MicroPython **v1.29.0**, ESP-IDF **v5.5.2**, carte
-`ESP32_GENERIC_S3`, variante `SPIRAM_OCT`. SPI2 appartient exclusivement au
-module natif (GPIO CS=9, CLK=10, D0..D3=11..14). Ne pas creer `machine.SPI(1)`
+`ESP32_GENERIC_S3`, variante `SPIRAM_OCT`. SPI3_HOST appartient exclusivement au
+module natif (GPIO CS=9, CLK=10, D0..D3=11..14). Ne pas creer `machine.SPI(2)`
 en parallele. La SD conserve son bus separe. Les transferts sont synchrones,
 avec un tampon DMA interne de 4092 octets. L'affichage utilise deux buffers
 persistants de 255360 octets en memoire accessible au heap MicroPython.

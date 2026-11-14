@@ -11,6 +11,7 @@ typedef int esp_err_t;
 #define ESP_ERR_INVALID_ARG 0x102
 #define ESP_ERR_INVALID_STATE 0x103
 #define SPI2_HOST 1
+#define SPI3_HOST 2
 #define SPI_DMA_CH_AUTO 3
 #define portMAX_DELAY UINT32_MAX
 #define SPICOMMON_BUSFLAG_MASTER (1 << 0)

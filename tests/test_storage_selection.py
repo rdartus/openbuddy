@@ -53,7 +53,7 @@ class BoardProfileTests(unittest.TestCase):
         self.assertEqual(cfg.DISPLAY_DRIVER, "co5300")
         self.assertEqual((cfg.LCD_SPI_ID, cfg.LCD_SCLK, cfg.LCD_MOSI, cfg.LCD_CS, cfg.LCD_RST),
                          (1, 10, 11, 9, 21))
-        self.assertEqual(cfg.LCD_SPI_BAUD, 10_000_000)
+        self.assertEqual(cfg.LCD_SPI_BAUD, 40_000_000)
         self.assertEqual((cfg.SD_SPI_ID, cfg.SD_SCLK, cfg.SD_MOSI, cfg.SD_MISO, cfg.SD_CS),
                          (2, 41, 39, 40, 38))
         self.assertIsNone(cfg.LCD_DC)

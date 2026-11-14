@@ -17,7 +17,7 @@ Pour le S3 AMOLED, lire aussi [le guide firmware QSPI](docs/s3-qspi-build.md), r
 ## Structure
 
 - `c6lcd/` : firmware **MicroPython** de la Waveshare ESP32-C6-LCD-1.47. `board_config.py` = broches et géométrie (source unique), `st7789.py` = driver écran, `main.py`/`companion.py` = boucle principale, `buddy_ble.py` = HID/GATT/appairage, `buddy_ui.py` = écran et halo, `buddy_protocol.py` = protocole partagé PC/carte.
-- `c6lcd/co5300.py` : pilote S3 AMOLED utilisant `amoled_qspi` natif (sources dans `native/`). Anciennes demos Waveshare : SH8601 ; nouvelles : CO5300. Le nom du module Python est conserve pour les profils existants, sans detection confirmee du silicium. Registres sur une ligne, pixels sur quatre ; SPI2 reserve au module natif, ne pas creer `machine.SPI(1)` en parallele. SD sur bus separe.
+- `c6lcd/co5300.py` : pilote S3 AMOLED utilisant `amoled_qspi` natif (sources dans `native/`). Anciennes demos Waveshare : SH8601 ; nouvelles : CO5300. Le nom du module Python est conserve pour les profils existants, sans detection confirmee du silicium. Registres sur une ligne, pixels sur quatre ; SPI3_HOST est reserve au module natif, ne pas creer `machine.SPI(2)` en parallele. SD sur bus separe.
 - `c6lcd/buddy_usb.py` : transport USB série, même protocole JSON que BLE, sans HID ni remontée des boutons. Le firmware conserve les deux transports ; USB prend l'affichage tant que sa lease est active, sauf appairage BLE prioritaire.
 - `c6lcd/orientation_demo.py` : ancienne démo conservée.
 - `c6lcd/shared_spi.py`, `sdcard_spi.py`, `storage.py`, `pet_player.py` : bus écran/SD partagé, carte en lecture seule, lecteur RGB565 à un buffer.

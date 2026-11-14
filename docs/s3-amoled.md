@@ -23,8 +23,8 @@ Le nom Python `co5300` est conserve pour les profils existants.
 Le pilote exige le module C **`amoled_qspi` compile dans MicroPython** : registres
 avec opcode `0x02`, pixels RGB565 BE avec opcode `0x32`, en-tete sur une ligne
 et pixels sur quatre. Le `.bin` MicroPython officiel ne suffit pas, et `pc.deploy`
-ne peut pas y ajouter ce module natif. SPI2 est reserve au module : ne pas creer
-`machine.SPI(1)` en parallele ; la SD garde son bus separe. Deux buffers persistants
+ne peut pas y ajouter ce module natif. SPI3_HOST est reserve au module : ne pas creer
+`machine.SPI(2)` en parallele ; la SD garde son bus separe. Deux buffers persistants
 de 255 360 octets servent a la rotation et aux transferts alignes, avec conservation
 des pixels voisins. Voir le [guide firmware QSPI](s3-qspi-build.md) pour la
 configuration de compilation et les limites du transport.

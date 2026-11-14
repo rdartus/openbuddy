@@ -105,7 +105,7 @@ class AMOLEDTests(unittest.TestCase):
             (0x29, None, False),
         ])
         self.assertEqual(self.transactions[-1], (0x51, b"\x80", False))
-        self.assertEqual(self.lcd.bus.options, {"baudrate": 10_000_000})
+        self.assertEqual(self.lcd.bus.options, {"baudrate": 40_000_000})
         self.assertEqual(set(self.pins), {21})
 
     def test_initial_clear_covers_panel_with_twenty_column_offset(self):

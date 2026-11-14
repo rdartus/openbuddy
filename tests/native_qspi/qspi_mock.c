@@ -52,7 +52,7 @@ void heap_caps_free(void *p) {
 }
 
 esp_err_t spi_bus_initialize(int host, const spi_bus_config_t *c, int dma) {
-    CHECK(host == SPI2_HOST && dma == SPI_DMA_CH_AUTO);
+    CHECK(host == SPI3_HOST && dma == SPI_DMA_CH_AUTO);
     CHECK(c->sclk_io_num == 10 && c->mosi_io_num == 11 && c->miso_io_num == 12);
     CHECK(c->quadwp_io_num == 13 && c->quadhd_io_num == 14);
     CHECK(c->data4_io_num == -1 && c->data5_io_num == -1);
@@ -67,7 +67,7 @@ esp_err_t spi_bus_initialize(int host, const spi_bus_config_t *c, int dma) {
 }
 
 esp_err_t spi_bus_add_device(int host, const spi_device_interface_config_t *c, spi_device_handle_t *device) {
-    CHECK(host == SPI2_HOST && mock.bus && !mock.device);
+    CHECK(host == SPI3_HOST && mock.bus && !mock.device);
     CHECK(c->command_bits == 8 && c->address_bits == 24 && c->dummy_bits == 0);
     CHECK(c->mode == 0 && c->clock_speed_hz > 0);
     CHECK(c->spics_io_num == 9 && c->queue_size == 1 && c->flags == SPI_DEVICE_HALFDUPLEX);
@@ -90,7 +90,7 @@ esp_err_t spi_bus_remove_device(spi_device_handle_t device) {
 }
 
 esp_err_t spi_bus_free(int host) {
-    CHECK(host == SPI2_HOST && mock.bus && !mock.device && !mock.acquired && !mock.external);
+    CHECK(host == SPI3_HOST && mock.bus && !mock.device && !mock.acquired && !mock.external);
     if (mock.failure == 11) {
         return ESP_ERR_INVALID_STATE;
     }

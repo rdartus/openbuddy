@@ -61,7 +61,7 @@ except OSError:
 if BOARD_MODEL == "waveshare-s3-amoled-164":
     DISPLAY_DRIVER = "co5300"
     LCD_SCLK, LCD_MOSI, LCD_CS, LCD_RST = 10, 11, 9, 21
-    LCD_SPI_BAUD = 10_000_000
+    LCD_SPI_BAUD = 40_000_000
     LCD_DC = LCD_BL = RGB_LED = None
     BOOT_BUTTON = 0
     SD_SPI_ID = 2

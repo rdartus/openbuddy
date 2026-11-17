@@ -12,7 +12,7 @@ def raises(kind, function, *args, **kwargs):
 
 
 cases = 0
-assert amoled_qspi.API_VERSION == 2
+assert amoled_qspi.API_VERSION == 3
 for cs in (9, 46):
     for failure in (0, 3, 5, 6):
         data = bytes(9000)
@@ -102,6 +102,70 @@ for baudrate in (0, -1, 80000001):
     raises(ValueError, amoled_qspi.Bus, baudrate=baudrate)
 raises(TypeError, amoled_qspi.Bus, unknown=True)
 raises(TypeError, amoled_qspi.Bus, 1, 2)
+
+
+def physical_pixel(shadow, x, y):
+    position = (y * 280 + x) * 2
+    return shadow[position:position + 2]
+
+
+mock.configure(0, b"", False, 0, 46)
+bus = amoled_qspi.Bus(cs=46)
+shadow = bytearray(280 * 456 * 2)
+scratch = bytearray(16)
+bus.fill_buffer(shadow, 0x07e0)
+assert physical_pixel(shadow, 0, 0) == b"\x07\xe0"
+assert physical_pixel(shadow, 279, 455) == b"\x07\xe0"
+for inverted in (False, True):
+    bus.fill_buffer(shadow, 0)
+    left, top = (224, 68) if inverted else (54, 386)
+    bus.fill_rect(shadow, left, top, 2, 2, 0x1234)
+    bus.blit_rotated(shadow, b"\xab\xcd", 0, 1, 1, 1, inverted)
+    bus.pack_rect(shadow, scratch, left, top, 2, 2)
+    expected = (b"\xab\xcd\x12\x34\x12\x34\x12\x34" if inverted
+                else b"\x12\x34\x12\x34\x12\x34\xab\xcd")
+    assert scratch[:8] == expected
+    assert physical_pixel(shadow, 0, 0) == b"\x00\x00"
+    cases += 1
+
+source = b"\xf8\x00\x07\xe0\x00\x1f\x12\x34\xab\xcd\xff\xff"
+for inverted, left, top, expected in (
+    (False, 54, 384, b"\x00\x00\x00\x00\x00\x1f\xff\xff\x07\xe0\xab\xcd\xf8\x00\x12\x34"),
+    (True, 224, 68, b"\x12\x34\xf8\x00\xab\xcd\x07\xe0\xff\xff\x00\x1f\x00\x00\x00\x00"),
+):
+    bus.fill_buffer(shadow, 0)
+    bus.blit_rotated(shadow, memoryview(source), 0, 0, 3, 2, inverted)
+    bus.pack_rect(shadow, scratch, left, top, 2, 4)
+    assert scratch == expected
+    cases += 1
+
+unchanged = physical_pixel(shadow, 224, 68)
+raises(ValueError, bus.fill_buffer, bytearray(3), 0)
+raises(TypeError, bus.fill_buffer, bytes(3), 0)
+for color in (-1, 0x10000):
+    raises(ValueError, bus.fill_buffer, shadow, color)
+    raises(ValueError, bus.fill_rect, shadow, 0, 0, 1, 1, color)
+for rect in ((-1, 0, 1, 1), (279, 0, 2, 1), (0, 456, 1, 1),
+             (0, 0, 0, 1), (0, 0, 10000000, 1)):
+    raises(ValueError, bus.fill_rect, *((shadow,) + rect + (0,)))
+    raises(ValueError, bus.pack_rect, shadow, scratch, *rect)
+for rect in ((-1, 0, 1, 1), (320, 0, 1, 1), (0, 171, 1, 2),
+             (0, 0, 0, 1), (0, 0, 10000000, 1)):
+    raises(ValueError, bus.blit_rotated, *((shadow, b"\x12\x34") + rect + (False,)))
+raises(ValueError, bus.blit_rotated, shadow, b"", 0, 0, 1, 1, False)
+raises(ValueError, bus.blit_rotated, shadow, memoryview(shadow)[:2], 0, 0, 1, 1, False)
+for rect in ((1, 0, 2, 2), (0, 0, 3, 2), (0, 0, 280, 456)):
+    raises(ValueError, bus.pack_rect, shadow, scratch, *rect)
+raises(ValueError, bus.pack_rect, shadow, shadow, 0, 0, 2, 2)
+assert physical_pixel(shadow, 224, 68) == unchanged
+bus.deinit()
+for method, args in ((bus.fill_buffer, (shadow, 0)),
+                     (bus.fill_rect, (shadow, 0, 0, 2, 2, 0)),
+                     (bus.blit_rotated, (shadow, b"\x00\x00", 0, 0, 1, 1, False)),
+                     (bus.pack_rect, (shadow, scratch, 0, 0, 2, 2))):
+    raises(OSError, method, *args)
+mock.check(False)
+cases += 1
 
 for failure in (10, 11):
     mock.configure(0, b"", False, 0)

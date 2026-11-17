@@ -108,7 +108,7 @@ def package(micropython, idf, output):
     manifest = {
         "board": "waveshare-s3-amoled-164-v2", "experimental": True,
         "micropython_board": BOARD, "flash_bytes": 16 * 1024 * 1024,
-        "pet_storage": "internal", "lcd_cs": 46, "qspi_api_version": 2,
+        "pet_storage": "internal", "lcd_cs": 46, "qspi_api_version": 3,
         "orientation_sensor": "qmi8658", "flash_budget": budget,
         "usb_backend": "usb-serial-jtag", "usb_vid": 0x303A, "usb_pid": 0x1001,
         "openbuddy_commit": git(ROOT, "rev-parse", "HEAD"),

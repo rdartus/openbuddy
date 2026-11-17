@@ -60,7 +60,7 @@ Il peut aussi etre lance manuellement
 une fois disponible sur la branche par defaut. Il produit un artefact
 `openbuddy-s3-amoled-qspi` conserve 30 jours :
 
-- `openbuddy-s3-amoled-qspi.bin` : MicroPython avec le module natif **API v2**, sans
+- `openbuddy-s3-amoled-qspi.bin` : MicroPython avec le module natif **API v3**, sans
   application Python. L'identite par defaut v2 est figee dans `openbuddy_build`.
 - `openbuddy-s3-qspi-files.zip` : fichiers Python correspondants, diagnostic et licences.
 - `BUILD.json` : commits, etat sale/propre, empreintes, profil v2, CS=46,
@@ -89,6 +89,36 @@ Le VFS commence à `0x200000`. Le `.bin` combiné réécrit la table de partitio
 MicroPython recrée l’entrée VFS au démarrage. La conservation des données depuis
 MicroPython v1.29.0 SPIRAM_OCT ne remplace pas une sauvegarde et ne s’applique pas
 à un firmware ayant un autre partitionnement. Ne pas effacer la flash par réflexe.
+
+## Performance du rendu et timeouts USB
+
+Mesures sur carte S3 v2 avec l’ancien build QSPI API v2, sans pont sur le port série :
+pour un rectangle de **172 × 320 pixels** (110 080 octets), la copie des lignes
+dans `co5300.py::_flush` prend environ **3 943 ms**, contre **8 ms** pour la
+commande QSPI native qui envoie les mêmes pixels. `co5300.py::blit` prend environ
+**1 750 ms** pour un sprite de 96 × 104 pixels ; un premier dessin de l’interface
+sans pet a pris environ **37 s**. Ces durées sont des observations, pas des
+objectifs de performance.
+
+La démo constructeur `Arduino/examples/06_LVGL_Test/lcd_bsp.c` utilise des
+buffers DMA et dessine avec LVGL en C. OpenBuddy transmet aussi les pixels en
+QSPI natif, mais **transpose chaque pixel et compacte chaque ligne en boucles
+MicroPython**, puis ne traite l’USB que lorsque `BuddyUI.draw()` rend la main.
+Le panneau ne prend pas en charge `swap_xy` selon le pilote constructeur :
+basculer simplement un registre de rotation n’est pas un correctif établi.
+Augmenter le timeout du pont ne rendrait pas les animations ou les états réactifs.
+
+Le correctif **API v3** déplace dans `amoled_qspi` la rotation RGB565, le
+remplissage des rectangles et l’extraction des lignes depuis le buffer physique.
+Le transport QSPI et son tampon DMA de 4 092 octets ne changent pas. Les mises
+à jour conservent l’alignement pair, les voisins via le buffer d’ombre, le gap
+de 20 colonnes et les deux sens paysage ; un effacement plein écran envoie
+directement le buffer contigu. `co5300.py` refuse l’API v2, et le précontrôle
+de `pc.deploy` bloque un déploiement Python incompatible avant toute copie.
+**Cela nécessite un nouveau `.bin` API v3** et les fichiers Python du même commit.
+Les tests simulés ne suffisent pas : mesurer sur carte le temps par image, la
+latence USB, les couleurs et les deux orientations après compilation GitHub
+Actions. Ne pas déduire un gain matériel avant cet essai.
 
 ## Compilation Linux sans Docker
 

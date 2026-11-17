@@ -127,7 +127,7 @@ class DeployTests(unittest.TestCase):
             deploy.main()
         preflight, transfer, reset = run.call_args_list
         self.assertIn("Bus, API_VERSION", preflight.args[0][-1])
-        self.assertIn("API_VERSION < 2", preflight.args[0][-1])
+        self.assertIn("API_VERSION < 3", preflight.args[0][-1])
         self.assertIn("waveshare-s3-amoled-164-v2", transfer.args[0][-1])
         self.assertEqual(reset.args[0][-1], "reset")
 
@@ -197,7 +197,7 @@ class DeployTests(unittest.TestCase):
                 patch.object(deploy.subprocess, "run") as run:
             deploy.main()
         script = run.call_args_list[0].args[0][-1]
-        for version in (1, 2):
+        for version in (1, 2, 3):
             bus = Mock(side_effect=AssertionError("Preflight must not initialize hardware"))
             modules = {
                 "openbuddy_build": SimpleNamespace(BOARD_MODEL="waveshare-s3-amoled-164-v2"),
@@ -206,8 +206,8 @@ class DeployTests(unittest.TestCase):
             importer = Mock(side_effect=lambda name, *args: modules[name])
             environment = {"__builtins__": dict(vars(builtins), __import__=importer,
                                                 open=Mock(side_effect=OSError("No saved profile")))}
-            if version == 1:
-                with self.assertRaisesRegex(ImportError, "API_VERSION >= 2"):
+            if version < 3:
+                with self.assertRaisesRegex(ImportError, "API_VERSION >= 3"):
                     exec(script, environment)
             else:
                 exec(script, environment)

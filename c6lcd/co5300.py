@@ -12,8 +12,11 @@ try:
     import amoled_qspi
 except ImportError:
     raise ImportError("AMOLED requires native amoled_qspi; install the OpenBuddy "
-                      "ESP32-S3 QSPI MicroPython firmware (with octal PSRAM), "
-                      "not stock MicroPython")
+                       "ESP32-S3 QSPI MicroPython firmware (with octal PSRAM), "
+                       "not stock MicroPython")
+if getattr(amoled_qspi, "API_VERSION", 0) < 3:
+    raise ImportError("AMOLED requires OpenBuddy QSPI firmware API_VERSION >= 3; "
+                      "reflash the matching firmware before deploying Python files")
 
 import board_config as cfg
 from st7789 import LCD as TextRenderer, rgb
@@ -78,9 +81,7 @@ class LCD(TextRenderer):
 
     def clear_all(self, color=0):
         """Fill the full physical 280x456 panel, including the canvas margins."""
-        line = bytes((color >> 8, color & 255)) * self.WIDTH
-        for start in range(0, len(self.buffer), len(line)):
-            self.view[start:start + len(line)] = line
+        self.bus.fill_buffer(self.buffer, color)
         self._flush(0, 0, self.WIDTH, self.HEIGHT)
 
     def _point(self, x, y):
@@ -104,18 +105,18 @@ class LCD(TextRenderer):
             raise ValueError("Drawing outside the physical display")
         x1, y1 = (x + w + 1) & ~1, (y + h + 1) & ~1
         x, y = x & ~1, y & ~1
-        row_bytes = (x1 - x) * 2
-        length = 0
-        for row in range(y, y1):
-            start = (row * self.WIDTH + x) * 2
-            self.transfer_view[length:length + row_bytes] = self.view[start:start + row_bytes]
-            length += row_bytes
+        length = (x1 - x) * (y1 - y) * 2
+        if x == 0 and y == 0 and x1 == self.WIDTH and y1 == self.HEIGHT:
+            data = self.view
+        else:
+            self.bus.pack_rect(self.buffer, self.transfer_buffer, x, y, x1 - x, y1 - y)
+            data = self.transfer_view[:length]
         # Waveshare's panel gap is 20 columns; update coordinates must be even.
         left, right = x + 20, x1 - 1 + 20
         self._cmd(0x2A, bytes((left >> 8, left & 255, right >> 8, right & 255)))
         self._cmd(0x2B, bytes((y >> 8, y & 255, (y1 - 1) >> 8, (y1 - 1) & 255)))
         # Every native write starts a new RAMWR, so rows must be contiguous.
-        self.bus.write(0x2C, self.transfer_view[:length], quad=True)
+        self.bus.write(0x2C, data, quad=True)
 
     def blit(self, buf, x, y, w, h):
         bounds = self._bounds(x, y, w, h)
@@ -123,22 +124,13 @@ class LCD(TextRenderer):
             return
         if len(buf) != w * h * 2:
             raise ValueError("Invalid RGB565 buffer length")
-        for row in range(h):
-            for column in range(w):
-                px, py = self._point(x + column, y + row)
-                target = (py * self.WIDTH + px) * 2
-                source = (row * w + column) * 2
-                self.buffer[target] = buf[source]
-                self.buffer[target + 1] = buf[source + 1]
+        self.bus.blit_rotated(self.buffer, buf, x, y, w, h,
+                              self.orientation == "landscape_inv")
         self._flush(*bounds)
 
     def fill_rect(self, x, y, w, h, color):
         bounds = self._bounds(x, y, w, h)
         if bounds is None:
             return
-        px, py, pw, ph = bounds
-        line = bytes((color >> 8, color & 255)) * pw
-        for row in range(py, py + ph):
-            start = (row * self.WIDTH + px) * 2
-            self.buffer[start:start + len(line)] = line
+        self.bus.fill_rect(self.buffer, *bounds, color)
         self._flush(*bounds)

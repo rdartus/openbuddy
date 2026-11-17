@@ -54,6 +54,7 @@ class AMOLEDTests(unittest.TestCase):
                 self.options = kwargs
                 self.transactions = []
                 self.payload_buffers = []
+                self.native_calls = []
                 self.deinit = Mock()
                 self.fail_command = None
                 buses.append(self)
@@ -64,6 +65,32 @@ class AMOLEDTests(unittest.TestCase):
                 self.transactions.append((command, None if data is None else bytes(data), quad))
                 if quad:
                     self.payload_buffers.append(data.obj)
+
+            def fill_buffer(self, shadow, color):
+                self.native_calls.append("fill_buffer")
+                shadow[:] = color.to_bytes(2, "big") * (280 * 456)
+
+            def fill_rect(self, shadow, x, y, w, h, color):
+                self.native_calls.append("fill_rect")
+                for row in range(y, y + h):
+                    start = (row * 280 + x) * 2
+                    shadow[start:start + w * 2] = color.to_bytes(2, "big") * w
+
+            def blit_rotated(self, shadow, source, x, y, w, h, inverted):
+                self.native_calls.append("blit_rotated")
+                for row in range(h):
+                    for column in range(w):
+                        px = 54 + (171 - y - row if inverted else y + row)
+                        py = 68 + (x + column if inverted else 319 - x - column)
+                        target = (py * 280 + px) * 2
+                        offset = (row * w + column) * 2
+                        shadow[target:target + 2] = source[offset:offset + 2]
+
+            def pack_rect(self, shadow, scratch, x, y, w, h):
+                self.native_calls.append("pack_rect")
+                for row in range(h):
+                    start = ((y + row) * 280 + x) * 2
+                    scratch[row * w * 2:(row + 1) * w * 2] = shadow[start:start + w * 2]
 
         machine = types.SimpleNamespace(Pin=FakePin, SPI=Mock(
             side_effect=AssertionError("AMOLED must not create machine.SPI")), PWM=Mock(
@@ -77,7 +104,7 @@ class AMOLEDTests(unittest.TestCase):
         })
         self.dependencies = {
             "machine": machine, "board_config": cfg, "st7789": self.renderer, "time": clock,
-            "amoled_qspi": types.SimpleNamespace(Bus=FakeBus),
+            "amoled_qspi": types.SimpleNamespace(Bus=FakeBus, API_VERSION=3),
         }
         self.driver = load_module("co5300", self.dependencies)
         self.lcd = self.driver.LCD()
@@ -223,11 +250,17 @@ class AMOLEDTests(unittest.TestCase):
                 self.transactions.clear()
                 self.lcd.clear_all(color)
                 expected = color.to_bytes(2, "big") * (280 * 456)
-                self.assert_window(20, 0, 299, 455, [expected])
-                self.assertEqual(self.lcd.buffer, expected)
-                self.assertIs(self.lcd.transfer_buffer, scratch)
+            self.assert_window(20, 0, 299, 455, [expected])
+            self.assertEqual(self.lcd.buffer, expected)
+            self.assertIs(self.lcd.transfer_buffer, scratch)
+            self.assertIs(self.lcd.bus.payload_buffers[-1], self.lcd.buffer)
         self.lcd.fill_rect(1, 1, 3, 5, 0x1234)
-        self.assertTrue(all(buf is scratch for buf in self.lcd.bus.payload_buffers))
+        self.assertIs(self.lcd.bus.payload_buffers[-1], scratch)
+        self.lcd.blit(b"\x12\x34", 0, 0, 1, 1)
+        self.assertIn("fill_buffer", self.lcd.bus.native_calls)
+        self.assertIn("fill_rect", self.lcd.bus.native_calls)
+        self.assertIn("blit_rotated", self.lcd.bus.native_calls)
+        self.assertIn("pack_rect", self.lcd.bus.native_calls)
 
     def test_physical_bounds_and_edge_alignment(self):
         self.transactions.clear()
@@ -300,6 +333,13 @@ class AMOLEDTests(unittest.TestCase):
         with patch.object(builtins, "__import__", missing_import):
             with self.assertRaisesRegex(ImportError, "install.*QSPI MicroPython firmware"):
                 load_module("co5300", dependencies)
+
+    def test_api_v2_is_rejected_before_touching_the_display(self):
+        old = types.SimpleNamespace(Bus=Mock(side_effect=AssertionError("Outdated bus used")),
+                                    API_VERSION=2)
+        with self.assertRaisesRegex(ImportError, "API_VERSION >= 3"):
+            load_module("co5300", dict(self.dependencies, amoled_qspi=old))
+        old.Bus.assert_not_called()
 
     def test_ram_tool_uses_full_physical_clear_and_closes(self):
         lcd = Mock()

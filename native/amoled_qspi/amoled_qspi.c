@@ -1,4 +1,5 @@
 #include <string.h>
+#include <stdint.h>
 
 #include "py/runtime.h"
 #include "driver/gpio.h"
@@ -14,6 +15,12 @@
 
 #define QSPI_BLOCK_SIZE (4092)
 #define QSPI_CS (9)
+#define PANEL_WIDTH (280)
+#define PANEL_HEIGHT (456)
+#define CANVAS_WIDTH (320)
+#define CANVAS_HEIGHT (172)
+#define CANVAS_X (54)
+#define CANVAS_Y (68)
 // Match the Waveshare v2 demo; leave SPI3 available for the separate SD bus.
 #define QSPI_HOST SPI2_HOST
 
@@ -195,6 +202,136 @@ static mp_obj_t amoled_qspi_write(size_t n_args, const mp_obj_t *pos_args, mp_ma
 }
 static MP_DEFINE_CONST_FUN_OBJ_KW(amoled_qspi_write_obj, 1, amoled_qspi_write);
 
+static void amoled_qspi_check_open(mp_obj_t bus) {
+    amoled_qspi_bus_t *self = MP_OBJ_TO_PTR(bus);
+    if (self->closed) {
+        mp_raise_msg(&mp_type_OSError, MP_ERROR_TEXT("QSPI bus is deinitialized"));
+    }
+}
+
+static void amoled_qspi_check_rect(mp_int_t x, mp_int_t y, mp_int_t w, mp_int_t h,
+    int max_w, int max_h) {
+    if (x < 0 || y < 0 || w <= 0 || h <= 0 || x >= max_w || y >= max_h ||
+        w > max_w - x || h > max_h - y) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Invalid QSPI rectangle"));
+    }
+}
+
+static mp_buffer_info_t amoled_qspi_shadow(mp_obj_t object) {
+    mp_buffer_info_t shadow;
+    mp_get_buffer_raise(object, &shadow, MP_BUFFER_WRITE);
+    if (shadow.len != PANEL_WIDTH * PANEL_HEIGHT * 2) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Invalid QSPI shadow size"));
+    }
+    return shadow;
+}
+
+// All byte operations preserve RGB565 big-endian order in the PSRAM shadow.
+static mp_obj_t amoled_qspi_fill_buffer(mp_obj_t bus, mp_obj_t shadow_in, mp_obj_t color_in) {
+    amoled_qspi_check_open(bus);
+    mp_buffer_info_t shadow = amoled_qspi_shadow(shadow_in);
+    mp_int_t color = mp_obj_get_int(color_in);
+    if (color < 0 || color > 0xffff) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Invalid RGB565 color"));
+    }
+    uint8_t *pixels = shadow.buf;
+    for (size_t i = 0; i < shadow.len; i += 2) {
+        pixels[i] = color >> 8;
+        pixels[i + 1] = color;
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_3(amoled_qspi_fill_buffer_obj, amoled_qspi_fill_buffer);
+
+static mp_obj_t amoled_qspi_fill_rect(size_t n_args, const mp_obj_t *args) {
+    amoled_qspi_check_open(args[0]);
+    mp_buffer_info_t shadow = amoled_qspi_shadow(args[1]);
+    mp_int_t x = mp_obj_get_int(args[2]);
+    mp_int_t y = mp_obj_get_int(args[3]);
+    mp_int_t w = mp_obj_get_int(args[4]);
+    mp_int_t h = mp_obj_get_int(args[5]);
+    amoled_qspi_check_rect(x, y, w, h, PANEL_WIDTH, PANEL_HEIGHT);
+    mp_int_t color = mp_obj_get_int(args[6]);
+    if (color < 0 || color > 0xffff) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Invalid RGB565 color"));
+    }
+    uint8_t *pixels = shadow.buf;
+    for (int row = y; row < y + h; row++) {
+        size_t pos = ((size_t)row * PANEL_WIDTH + x) * 2;
+        for (int col = 0; col < w; col++) {
+            pixels[pos++] = color >> 8;
+            pixels[pos++] = color;
+        }
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(amoled_qspi_fill_rect_obj, 7, 7, amoled_qspi_fill_rect);
+
+static mp_obj_t amoled_qspi_blit_rotated(size_t n_args, const mp_obj_t *args) {
+    amoled_qspi_check_open(args[0]);
+    mp_buffer_info_t shadow = amoled_qspi_shadow(args[1]);
+    mp_buffer_info_t source;
+    mp_get_buffer_raise(args[2], &source, MP_BUFFER_READ);
+    mp_int_t x = mp_obj_get_int(args[3]);
+    mp_int_t y = mp_obj_get_int(args[4]);
+    mp_int_t w = mp_obj_get_int(args[5]);
+    mp_int_t h = mp_obj_get_int(args[6]);
+    amoled_qspi_check_rect(x, y, w, h, CANVAS_WIDTH, CANVAS_HEIGHT);
+    if (source.len != (size_t)w * h * 2) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Invalid RGB565 source size"));
+    }
+    uintptr_t src = (uintptr_t)source.buf;
+    uintptr_t dst = (uintptr_t)shadow.buf;
+    if ((src <= dst && dst - src < source.len) ||
+        (dst < src && src - dst < shadow.len)) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Overlapping RGB565 buffers"));
+    }
+    bool inverted = mp_obj_is_true(args[7]);
+    const uint8_t *input = source.buf;
+    uint8_t *pixels = shadow.buf;
+    for (int row = 0; row < h; row++) {
+        int px = inverted ? CANVAS_X + CANVAS_HEIGHT - 1 - y - row : CANVAS_X + y + row;
+        for (int col = 0; col < w; col++) {
+            int py = inverted ? CANVAS_Y + x + col : CANVAS_Y + CANVAS_WIDTH - 1 - x - col;
+            size_t target = ((size_t)py * PANEL_WIDTH + px) * 2;
+            size_t source_pos = ((size_t)row * w + col) * 2;
+            pixels[target] = input[source_pos];
+            pixels[target + 1] = input[source_pos + 1];
+        }
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(amoled_qspi_blit_rotated_obj, 8, 8, amoled_qspi_blit_rotated);
+
+static mp_obj_t amoled_qspi_pack_rect(size_t n_args, const mp_obj_t *args) {
+    amoled_qspi_check_open(args[0]);
+    mp_buffer_info_t shadow = amoled_qspi_shadow(args[1]);
+    mp_buffer_info_t scratch;
+    mp_get_buffer_raise(args[2], &scratch, MP_BUFFER_WRITE);
+    mp_int_t x = mp_obj_get_int(args[3]);
+    mp_int_t y = mp_obj_get_int(args[4]);
+    mp_int_t w = mp_obj_get_int(args[5]);
+    mp_int_t h = mp_obj_get_int(args[6]);
+    amoled_qspi_check_rect(x, y, w, h, PANEL_WIDTH, PANEL_HEIGHT);
+    if ((x | y | w | h) & 1 || scratch.len < (size_t)w * h * 2) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Invalid aligned QSPI buffer"));
+    }
+    // The scratch and shadow must not alias: row compaction would corrupt pixels.
+    uintptr_t src = (uintptr_t)shadow.buf;
+    uintptr_t dst = (uintptr_t)scratch.buf;
+    if ((src <= dst && dst - src < shadow.len) ||
+        (dst < src && src - dst < scratch.len)) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Overlapping QSPI buffers"));
+    }
+    size_t row_bytes = (size_t)w * 2;
+    for (int row = 0; row < h; row++) {
+        memcpy((uint8_t *)scratch.buf + (size_t)row * row_bytes,
+            (const uint8_t *)shadow.buf + ((size_t)(y + row) * PANEL_WIDTH + x) * 2, row_bytes);
+    }
+    return mp_const_none;
+}
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(amoled_qspi_pack_rect_obj, 7, 7, amoled_qspi_pack_rect);
+
 static mp_obj_t amoled_qspi_deinit(mp_obj_t self_in) {
     esp_err_t err = amoled_qspi_cleanup(MP_OBJ_TO_PTR(self_in));
     if (err != ESP_OK) {
@@ -212,6 +349,10 @@ static MP_DEFINE_CONST_FUN_OBJ_1(amoled_qspi_finalise_obj, amoled_qspi_finalise)
 
 static const mp_rom_map_elem_t amoled_qspi_locals_table[] = {
     { MP_ROM_QSTR(MP_QSTR_write), MP_ROM_PTR(&amoled_qspi_write_obj) },
+    { MP_ROM_QSTR(MP_QSTR_fill_buffer), MP_ROM_PTR(&amoled_qspi_fill_buffer_obj) },
+    { MP_ROM_QSTR(MP_QSTR_fill_rect), MP_ROM_PTR(&amoled_qspi_fill_rect_obj) },
+    { MP_ROM_QSTR(MP_QSTR_blit_rotated), MP_ROM_PTR(&amoled_qspi_blit_rotated_obj) },
+    { MP_ROM_QSTR(MP_QSTR_pack_rect), MP_ROM_PTR(&amoled_qspi_pack_rect_obj) },
     { MP_ROM_QSTR(MP_QSTR_deinit), MP_ROM_PTR(&amoled_qspi_deinit_obj) },
     { MP_ROM_QSTR(MP_QSTR___del__), MP_ROM_PTR(&amoled_qspi_finalise_obj) },
 };
@@ -223,7 +364,7 @@ static MP_DEFINE_CONST_OBJ_TYPE(amoled_qspi_bus_type, MP_QSTR_Bus, MP_TYPE_FLAG_
 static const mp_rom_map_elem_t amoled_qspi_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_amoled_qspi) },
     { MP_ROM_QSTR(MP_QSTR_Bus), MP_ROM_PTR(&amoled_qspi_bus_type) },
-    { MP_ROM_QSTR(MP_QSTR_API_VERSION), MP_ROM_INT(2) },
+    { MP_ROM_QSTR(MP_QSTR_API_VERSION), MP_ROM_INT(3) },
 };
 static MP_DEFINE_CONST_DICT(amoled_qspi_globals, amoled_qspi_globals_table);
 

@@ -50,10 +50,10 @@ def main():
                 "if board in ('waveshare-s3-amoled-164', 'waveshare-s3-amoled-164-v2'):\n"
                 "    try:\n"
                 "        from amoled_qspi import Bus, API_VERSION\n"
-                "        if API_VERSION < 2: raise ImportError('Outdated QSPI firmware')\n"
+                "        if API_VERSION < 3: raise ImportError('Outdated QSPI firmware')\n"
                 "    except ImportError:\n"
                 "        raise ImportError('Install the OpenBuddy ESP32-S3 QSPI MicroPython "
-                "firmware with native amoled_qspi API_VERSION >= 2 and octal PSRAM before deploying; "
+                "firmware with native amoled_qspi API_VERSION >= 3 and octal PSRAM before deploying; "
                 "stock MicroPython cannot drive this panel')\n"
             )
             subprocess.run([sys.executable, "-m", "mpremote", "connect", args.port,

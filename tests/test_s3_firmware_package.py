@@ -112,7 +112,7 @@ class S3FirmwarePackageTests(unittest.TestCase):
             "flash_bytes": 16 * 1024 * 1024,
             "pet_storage": "internal",
             "lcd_cs": 46,
-            "qspi_api_version": 2,
+            "qspi_api_version": 3,
             "orientation_sensor": "qmi8658",
             "usb_backend": "usb-serial-jtag",
             "usb_vid": 0x303A,

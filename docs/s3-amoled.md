@@ -22,7 +22,7 @@ Un ancien marqueur n'est jamais remplace automatiquement : choisir explicitement
 **Ne pas confondre les revisions** : l'ancien profil `waveshare-s3-amoled-164`
 conserve CS=GPIO9 et son comportement SD optionnel. Le profil **v2 utilise GPIO46**,
 40 MHz comme le constructeur, et le pet exclusivement en flash interne.
-Le choix du CS est transmis au module natif (`Bus(cs=...)`, API v2), y compris
+Le choix du CS est transmis au module natif (`Bus(cs=...)`, API v3), y compris
 pour liberer correctement la broche apres une erreur ou un reset logiciel.
 
 Les anciennes demos Waveshare nomment le pilote **SH8601**, les nouvelles

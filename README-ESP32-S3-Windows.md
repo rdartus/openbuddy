@@ -35,6 +35,10 @@ git pull --ff-only origin orientation
 
 Si Git affiche des modifications locales ou une divergence, ne les efface pas :
 résous-les avant de poursuivre.
+Si tu testes un artefact produit sur une autre branche de travail déjà présente
+dans ton dépôt, conserve cette branche plutôt que de passer à `orientation` :
+le **commit** du dépôt doit toujours être celui de l’artefact, comme vérifié
+à l’étape 2.
 
 Préparer Python, sans activer de venv ni demander de droits administrateur :
 
@@ -48,7 +52,8 @@ uv pip install --python .venv\Scripts\python.exe -r pc\requirements.txt -r pc\re
 
 1. Ouvrir les [GitHub Actions du dépôt](https://github.com/rdartus/openbuddy/actions/workflows/s3-qspi.yml).
 2. Choisir **Build S3 AMOLED v2 QSPI firmware**, sur la branche
-   `orientation`, pour **le même commit que ton dépôt** (`git rev-parse HEAD`).
+   `orientation` (ou ta branche de travail), pour **le même commit que ton dépôt**
+   (`git rev-parse HEAD`).
 3. Attendre la réussite de l’exécution, puis télécharger l’artefact
    **`openbuddy-s3-amoled-qspi`** en bas de sa page. Se connecter à GitHub si nécessaire.
 4. Extraire son contenu dans **`dist\s3-qspi`**, à la racine du dépôt.
@@ -64,7 +69,7 @@ Vérifier le commit, le profil et l’empreinte avant de flasher :
 ```powershell
 $Build = Get-Content .\dist\s3-qspi\BUILD.json -Raw | ConvertFrom-Json
 if ($Build.openbuddy_commit -ne (git rev-parse HEAD).Trim() -or $Build.openbuddy_dirty) { throw "Le build ne correspond pas au depot propre" }
-if ($Build.board -ne "waveshare-s3-amoled-164-v2" -or $Build.lcd_cs -ne 46 -or $Build.flash_bytes -ne 16777216 -or $Build.pet_storage -ne "internal" -or $Build.qspi_api_version -ne 2) { throw "Mauvais firmware S3 v2" }
+if ($Build.board -ne "waveshare-s3-amoled-164-v2" -or $Build.lcd_cs -ne 46 -or $Build.flash_bytes -ne 16777216 -or $Build.pet_storage -ne "internal" -or $Build.qspi_api_version -ne 3) { throw "Mauvais firmware S3 v2" }
 if ($Build.orientation_sensor -ne "qmi8658" -or $Build.flash_budget.vfs_bytes -ne 14680064 -or $Build.flash_budget.spare_vfs_bytes -le 0) { throw "Build sans orientation ou budget flash verifie" }
 if ($Build.usb_backend -ne "usb-serial-jtag" -or $Build.usb_vid -ne 0x303A -or $Build.usb_pid -ne 0x1001) { throw "Ancien build USB : telecharger le firmware Serial/JTAG corrige" }
 $Hash = (Get-FileHash .\dist\s3-qspi\openbuddy-s3-amoled-qspi.bin -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -77,9 +82,10 @@ rien sur la carte : le flashage se fait à l’étape suivante.
 ## 3. Flasher l’ESP32-S3
 
 **Sauvegarder les fichiers importants de la carte avant de flasher.**
-Ne pas lancer `erase-flash`. Le build conserve le partitionnement MicroPython
-v1.29.0 SPIRAM_OCT ; la conservation des données n’est pas garantie depuis un
-firmware constructeur, Arduino ou un autre partitionnement.
+Ne pas lancer `erase-flash` dans la procédure normale. Le build conserve le
+partitionnement MicroPython v1.29.0 SPIRAM_OCT ; la conservation des données
+n’est pas garantie depuis un firmware constructeur, Arduino ou un autre
+partitionnement.
 
 Brancher la carte, repérer son port dans la liste et le saisir :
 
@@ -118,6 +124,9 @@ mise à jour des fichiers Python ne peut pas corriger le backend USB du `.bin`.
 **Utiliser exactement le profil ci-dessous, avec le suffixe `-v2`.**
 Le déploiement vérifie le module natif avant de copier les fichiers.
 Même si tu avais déjà déployé OpenBuddy, cette commande corrige l’ancien profil GPIO9.
+Le pilote accéléré exige **`amoled_qspi.API_VERSION >= 3`** : reflasher d’abord
+le nouveau `.bin` vérifié, sans effacer la flash, puis déployer les fichiers
+Python du même commit. Le `.bin` API v2 et ces fichiers ne sont pas compatibles.
 
 ```powershell
 uv run python -m pc.deploy --port $Port --board waveshare-s3-amoled-164-v2
@@ -143,6 +152,32 @@ jusqu’au redémarrage), BOOT long conserve l’appairage. En cas de capteur ab
 la rotation manuelle reste utilisable. Ne pas considérer le sens physique des
 axes comme validé avant cet essai.
 
+### Si le système de fichiers est corrompu
+
+Si `pc.deploy` échoue avec **`The filesystem appears to be corrupted`** puis
+`could not enter raw repl`, le port USB peut être visible mais MicroPython ne
+peut pas accéder à son système de fichiers. Relancer `pc.deploy` ou changer de
+port ne répare pas ce problème. Ce cas peut notamment survenir après un flash
+depuis un firmware au partitionnement différent ; ne pas en déduire la cause
+exacte sans diagnostic.
+
+**Si la carte contient des fichiers ou des clés d’appairage à conserver, arrêter
+ici et sauvegarder sa flash avant toute remise à zéro.** Sur une carte dont tout
+le contenu peut être perdu, vérifier à nouveau le port et le `.bin` comme aux
+étapes 2–3, puis seulement effectuer la récupération suivante :
+
+```powershell
+uv run python -m esptool --chip esp32s3 --port $Port --baud 460800 erase-flash
+if ($LASTEXITCODE -ne 0) { throw "Effacement en echec : ne pas poursuivre" }
+uv run python -m esptool --chip esp32s3 --port $Port --baud 460800 write-flash 0 .\dist\s3-qspi\openbuddy-s3-amoled-qspi.bin
+if ($LASTEXITCODE -ne 0) { throw "Reflashage en echec : ne pas poursuivre" }
+```
+
+**Cette opération efface le pet, les clés BLE et tous les autres fichiers de la
+carte.** Appuyer sur RST, relister les ports comme à l’étape 3, puis reprendre
+le déploiement et le test écran de l’étape 4. Un port occupé ou un simple délai
+de réponse USB ne justifie pas un effacement.
+
 ## 5. Installer le pet en flash interne
 
 Uniquement après un test écran réussi :
@@ -167,8 +202,9 @@ l’Action. L’installateur vérifie aussi la place réellement libre ; il refu
 transfert trop gros sans toucher à la TF ni effacer d’autres fichiers.
 
 Le `status` doit aussi montrer `"imu": true` et l’`"orientation"` courante
-après initialisation du capteur. Si les sens sont incorrects, voir les constantes
-d’axes et les limites de validation dans le [guide S3](docs/s3-amoled.md#orientation-automatique-v2-uniquement).
+après initialisation du capteur ; au tout début, `"imu": false` peut encore
+apparaître. Si les sens sont incorrects, voir les constantes d’axes et les
+limites de validation dans le [guide S3](docs/s3-amoled.md#orientation-automatique-v2-uniquement).
 
 Si la conversion existe déjà, la conserver ; utiliser `convert --force` seulement
 pour la refaire. Si le pack est déjà sur la carte, le conserver ou ajouter
@@ -195,6 +231,12 @@ uv run python -m pc.opencode --serial auto
 **Laisser ce terminal ouvert.** `Ctrl+C` arrête le pont. Aucun appairage Bluetooth
 n’est nécessaire. `auto` exige une seule carte Espressif branchée ; sinon utiliser
 `--serial` avec son port explicite.
+Le build **API v2** souffre d’une lenteur de rendu qui bloque parfois la boucle
+USB pendant plusieurs secondes. Le build API v3 déplace ces opérations dans le
+module natif, mais sa réactivité reste à valider sur matériel. Si le pont
+affiche `USB unavailable: TimeoutError - retrying`, conserver sa sortie ; ne
+pas effacer la flash ni simplement augmenter le timeout. Voir les
+[mesures et le correctif](docs/s3-qspi-build.md#performance-du-rendu-et-timeouts-usb).
 
 Les fois suivantes, ouvrir PowerShell dans `openbuddy` et relancer **uniquement
 cette dernière commande**. Ne pas reflasher ni réinstaller le pet à chaque démarrage.
@@ -205,6 +247,10 @@ Sans événement d’OpenCode, l’état `OFFLINE` est normal.
 - **Port disparu après le flash du `.bin`** : suivre la récupération BOOT/RST de
   l’étape 3 et vérifier `usb_backend: "usb-serial-jtag"` dans `BUILD.json`.
 - **Port occupé** : arrêter le pont avec `Ctrl+C` et fermer les autres outils série.
+- **`status` expire alors que le port est visible** : vérifier d’abord que le
+  nouveau build est en API v3. Sur l’ancien build API v2, le rendu peut bloquer
+  la boucle USB bien après le démarrage. Ce message seul ne démontre ni un
+  port occupé ni une flash corrompue.
 - **Déploiement ou transfert bloqué** : les outils arrêtent leur processus `mpremote`
   après 30 s pour le précontrôle, 180 s pour le déploiement ou 600 s pour le pet,
   puis tentent un reset limité à 20 s. `--timeout SECONDES` ajuste la durée du

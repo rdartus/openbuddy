@@ -27,14 +27,35 @@ Le partitionnement MicroPython standard est conserve : application avant
 `0x200000`, puis VFS dynamique jusqu'a la fin de la flash, soit **14 Mio** sur
 une carte 16 Mio. Les animations resident dans ce VFS persistant, pas dans la PSRAM.
 
+Le build v2 impose l'USB **Serial/JTAG materiel** (`303a:1001`), sans bascule du PHY
+vers USB OTG/TinyUSB CDC. Le REPL et le protocole JSON utilisent ce meme port ; les
+messages de demarrage/panic ESP-IDF sont aussi actives sur cette console secondaire.
+L'ancien build heritait du CDC TinyUSB de `ESP32_GENERIC_S3` (`303a:4001`), ce qui
+remplacait le peripherique USB apres flashage et rendait son fonctionnement lie au
+traitement logiciel de TinyUSB. Ce changement est une piste pour un port qui
+disparait au redemarrage, pas une preuve d'absence de panne de boot ou de PSRAM.
+Un firmware Serial/JTAG exige une **recompilation et un reflashage du `.bin`** :
+`pc.deploy` seul n'y change rien. Le packaging controle les symboles USB reellement
+compiles dans `micropython.map`, refuse TinyUSB/OTG et publie le backend/VID/PID
+dans `BUILD.json`. Le retablissement reel du port reste a valider sur la carte.
+
+Le packaging contrôle la table de partitions réellement compilée, la taille de
+`micropython.bin` dans sa partition et l'absence de débordement du `.bin` combiné
+sur le VFS. Il refuse aussi un budget VFS insuffisant pour les fichiers Python,
+**deux packs v2 de 73 images** (pour permettre un remplacement), les allocations,
+les métadonnées et une réserve de 256 Kio. Ce contrôle ne remplace pas `statvfs`
+à l'installation sur une carte déjà occupée. Le détail est dans `BUILD.json`.
+
 **Experimental : une compilation et des tests simules ne valident pas l'ecran
-reel, les couleurs, la rotation ou les redemarrages.** Le tactile et l'IMU ne sont
-pas utilises. Aucune animation proprietaire n'est distribuee avec le firmware.
+reel, les couleurs, la rotation ou les redemarrages.** Le QMI8658 choisit entre les
+deux sens paysage sur le profil v2 ; le sens de l'axe reste à valider sur matériel.
+Le tactile n'est pas utilisé. Aucune animation proprietaire n'est distribuee avec le firmware.
 
 ## GitHub Actions
 
 Le workflow **Build S3 AMOLED v2 QSPI firmware** compile sur les pushes vers `master`
-ou `feat/esp32-s3-amoled-164` et les pull requests modifiant les sources concernees.
+ou `feat/esp32-s3-amoled-164`, ainsi que sur la branche `orientation`, et les pull
+requests modifiant les sources concernees.
 Il peut aussi etre lance manuellement
 une fois disponible sur la branche par defaut. Il produit un artefact
 `openbuddy-s3-amoled-qspi` conserve 30 jours :
@@ -43,7 +64,10 @@ une fois disponible sur la branche par defaut. Il produit un artefact
   application Python. L'identite par defaut v2 est figee dans `openbuddy_build`.
 - `openbuddy-s3-qspi-files.zip` : fichiers Python correspondants, diagnostic et licences.
 - `BUILD.json` : commits, etat sale/propre, empreintes, profil v2, CS=46,
-  flash 16 Mio et `pet_storage: "internal"`.
+  flash 16 Mio, `pet_storage: "internal"`, `orientation_sensor: "qmi8658"` et
+  `flash_budget` (application, VFS, fichiers Python, packs et marges).
+- `BUILD.json` contient aussi `usb_backend: "usb-serial-jtag"`, `usb_vid: 12346`
+  et `usb_pid: 4097` (les identifiants `303a:1001` en decimal).
 - `SHA256SUMS.txt` : empreintes des fichiers livres.
 - `INSTALL.md` : le README Windows S3, également inclus dans le ZIP des sources.
 
@@ -51,6 +75,8 @@ Un tag pousse **`s3-qspi-*`** publie automatiquement une **prerelease**, uniquem
 apres la compilation reussie. Le workflow n'ecrase pas une release existante.
 Un push de branche ne publie pas de release. Un commit local ne lance aucune CI.
 Les pull requests n'ont pas de droit d'ecriture dans les releases.
+Le résumé GitHub Actions affiche aussi le budget flash vérifié, sans télécharger
+ni redistribuer de sprites du pet.
 
 ## Installation Windows uv
 

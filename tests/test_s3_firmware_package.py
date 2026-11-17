@@ -1,7 +1,10 @@
 import hashlib
 import json
 from pathlib import Path
+import shutil
+import subprocess
 import tempfile
+import struct
 import unittest
 from unittest.mock import call, patch
 import zipfile
@@ -29,6 +32,27 @@ LICENSES = {
     "licenses/ESP-IDF-LICENSE.txt": b"ESP-IDF license fixture\n",
 }
 FIRMWARE = b"\xe9\x00mock ESP32-S3 firmware\xff\n"
+LINK_MAP = ("usermod/amoled_qspi.c.obj\n"
+            "usb_serial_jtag_init\nusb_serial_jtag_poll_rx\nusb_serial_jtag_tx_strn\n")
+
+
+class S3USBBoardTests(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("cc"), "A host C preprocessor is not available")
+    def test_board_explicitly_keeps_the_hardware_usb_serial_jtag_phy(self):
+        header = packager.ROOT / "native/boards/OPENBUDDY_S3_AMOLED_V2/mpconfigboard.h"
+        probe = """
+#if !defined(MICROPY_HW_ENABLE_USBDEV) || !defined(MICROPY_HW_USB_CDC) || !defined(MICROPY_HW_ESP_USB_SERIAL_JTAG)
+#error USB backend must not depend on upstream defaults
+#endif
+#if MICROPY_HW_ENABLE_USBDEV || MICROPY_HW_USB_CDC || !MICROPY_HW_ESP_USB_SERIAL_JTAG
+#error The board must keep hardware USB Serial/JTAG, without TinyUSB/OTG
+#endif
+#if !MICROPY_HW_ENABLE_UART_REPL
+#error Keep UART boot diagnostics as well
+#endif
+"""
+        subprocess.run([shutil.which("cc"), "-E", "-P", "-x", "c", "-include", str(header), "-"],
+                       input=probe, text=True, capture_output=True, check=True, timeout=10)
 
 
 class S3FirmwarePackageTests(unittest.TestCase):
@@ -42,10 +66,17 @@ class S3FirmwarePackageTests(unittest.TestCase):
         self.build.mkdir(parents=True)
         self.idf.mkdir()
         (self.build / "sdkconfig").write_text(
-            "CONFIG_SPIRAM_MODE_OCT=y\nCONFIG_ESPTOOLPY_FLASHSIZE_16MB=y\n", encoding="ascii")
-        (self.build / "micropython.map").write_text(
-            "usermod/amoled_qspi.c.obj\n", encoding="ascii")
+            "CONFIG_SPIRAM_MODE_OCT=y\nCONFIG_ESPTOOLPY_FLASHSIZE_16MB=y\n"
+            "CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED=y\n", encoding="ascii")
+        (self.build / "micropython.map").write_text(LINK_MAP, encoding="ascii")
         (self.build / "firmware.bin").write_bytes(FIRMWARE)
+        (self.build / "micropython.bin").write_bytes(FIRMWARE)
+        (self.build / "partition_table").mkdir()
+        entries = [(1, 2, 0x9000, 0x6000, b"nvs"),
+                   (1, 1, 0xF000, 0x1000, b"phy_init"),
+                   (0, 0, 0x10000, 0x1F0000, b"factory")]
+        self.partitions = b"".join(struct.pack("<HBBII16sI", 0x50AA, *entry, 0) for entry in entries)
+        (self.build / "partition_table/partition-table.bin").write_bytes(self.partitions + b"\xff" * 32)
         (self.micropython / "LICENSE").write_bytes(LICENSES["licenses/MicroPython-LICENSE.txt"])
         (self.idf / "LICENSE").write_bytes(LICENSES["licenses/ESP-IDF-LICENSE.txt"])
         self.output = self.temporary / "artifacts/s3-qspi"
@@ -82,6 +113,11 @@ class S3FirmwarePackageTests(unittest.TestCase):
             "pet_storage": "internal",
             "lcd_cs": 46,
             "qspi_api_version": 2,
+            "orientation_sensor": "qmi8658",
+            "usb_backend": "usb-serial-jtag",
+            "usb_vid": 0x303A,
+            "usb_pid": 0x1001,
+            "flash_budget": packager.flash_budget(self.build),
             "experimental": True,
             "openbuddy_commit": "a" * 40,
             "openbuddy_dirty": bool(self.dirty),
@@ -170,6 +206,60 @@ class S3FirmwarePackageTests(unittest.TestCase):
         self.assertFalse(self.output.exists())
         self.git_mock.assert_not_called()
 
+    def test_flash_budget_keeps_two_complete_packs_python_and_reserve(self):
+        budget = packager.flash_budget(self.build)
+        self.assertEqual(budget["app_bytes"], len(FIRMWARE))
+        self.assertEqual(budget["app_partition_bytes"], 0x1F0000)
+        self.assertEqual(budget["vfs_offset"], 0x200000)
+        self.assertEqual(budget["vfs_bytes"], 14 * 1024 * 1024)
+        self.assertEqual(budget["pet_pixel_bytes"], 1457664)
+        self.assertEqual(budget["pet_budget_bytes"], 1572864)
+        self.assertEqual(budget["pack_copies"], 2)
+        self.assertEqual(budget["reserve_bytes"], 256 * 1024)
+        self.assertEqual(budget["python_bytes"], sum(
+            (self.root / "c6lcd" / name).stat().st_size for name in DEPLOY_FILES))
+        self.assertGreater(budget["python_budget_bytes"], budget["python_bytes"])
+        self.assertEqual(budget["required_vfs_bytes"],
+                         budget["python_budget_bytes"] + 2 * budget["pet_budget_bytes"] + 256 * 1024)
+        self.assertEqual(budget["spare_vfs_bytes"],
+                         budget["vfs_bytes"] - budget["required_vfs_bytes"])
+        self.assertGreater(budget["spare_vfs_bytes"], 10 * 1024 * 1024)
+
+    def test_changed_partition_layout_is_rejected_before_outputs(self):
+        table = self.build / "partition_table/partition-table.bin"
+        for data in (b"", self.partitions[:64], self.partitions + struct.pack(
+                "<HBBII16sI", 0x50AA, 1, 0x81, 0x200000, 0x200000, b"vfs", 0)):
+            with self.subTest(data=data):
+                table.write_bytes(data)
+                with self.assertRaisesRegex(ValueError, "partition layout"):
+                    packager.package(self.micropython, self.idf, self.output)
+                self.assertFalse(self.output.exists())
+
+    def test_oversized_application_or_combined_image_is_rejected(self):
+        for name, size, message in (("micropython.bin", 0x1F0001, "application exceeds"),
+                                     ("firmware.bin", 0x200001, "overlaps")):
+            with self.subTest(name=name):
+                path = self.build / name
+                path.write_bytes(b"\xff" * size)
+                with self.assertRaisesRegex(ValueError, message):
+                    packager.package(self.micropython, self.idf, self.output)
+                self.assertFalse(self.output.exists())
+                path.write_bytes(FIRMWARE)
+
+    def test_insufficient_vfs_budget_is_rejected(self):
+        original_stat = Path.stat
+
+        def huge_sources(path, *args, **kwargs):
+            if path.parent == self.root / "c6lcd":
+                from types import SimpleNamespace
+                return SimpleNamespace(st_size=1024 * 1024)
+            return original_stat(path, *args, **kwargs)
+
+        with patch.object(Path, "stat", huge_sources):
+            with self.assertRaisesRegex(ValueError, "do not fit internal flash"):
+                packager.package(self.micropython, self.idf, self.output)
+        self.assertFalse(self.output.exists())
+
     def test_missing_native_module_marker_is_rejected_before_outputs_or_git(self):
         (self.build / "micropython.map").write_text("other_module.c.obj\n", encoding="ascii")
         with self.assertRaisesRegex(ValueError, "native amoled_qspi module"):
@@ -181,6 +271,39 @@ class S3FirmwarePackageTests(unittest.TestCase):
         (self.build / "sdkconfig").write_text(
             "CONFIG_SPIRAM_MODE_OCT=y\nCONFIG_ESPTOOLPY_FLASHSIZE_4MB=y\n", encoding="ascii")
         with self.assertRaisesRegex(ValueError, "16 MiB flash"):
+            packager.package(self.micropython, self.idf, self.output)
+        self.assertFalse(self.output.exists())
+        self.git_mock.assert_not_called()
+
+    def test_missing_compiled_usb_serial_jtag_is_rejected_before_outputs(self):
+        for symbol in ("usb_serial_jtag_init", "usb_serial_jtag_poll_rx", "usb_serial_jtag_tx_strn"):
+            with self.subTest(symbol=symbol):
+                (self.build / "micropython.map").write_text(LINK_MAP.replace(symbol, "missing_symbol"))
+                with self.assertRaisesRegex(ValueError, "USB Serial/JTAG stdio"):
+                    packager.package(self.micropython, self.idf, self.output)
+                self.assertFalse(self.output.exists())
+                self.git_mock.assert_not_called()
+
+    def test_tinyusb_or_otg_firmware_is_rejected_before_outputs(self):
+        for symbol in ("mp_usbd_cdc_tx_strn", "usb_phy_init"):
+            with self.subTest(symbol=symbol):
+                (self.build / "micropython.map").write_text(LINK_MAP + symbol + "\n")
+                with self.assertRaisesRegex(ValueError, "must not switch.*TinyUSB"):
+                    packager.package(self.micropython, self.idf, self.output)
+                self.assertFalse(self.output.exists())
+                self.git_mock.assert_not_called()
+
+    def test_similar_symbol_names_do_not_count_as_compiled_usb_stdio(self):
+        (self.build / "micropython.map").write_text(
+            LINK_MAP.replace("usb_serial_jtag_init", "usb_serial_jtag_init_other"))
+        with self.assertRaisesRegex(ValueError, "USB Serial/JTAG stdio"):
+            packager.package(self.micropython, self.idf, self.output)
+        self.assertFalse(self.output.exists())
+
+    def test_missing_early_usb_diagnostics_is_rejected_before_outputs(self):
+        config = self.build / "sdkconfig"
+        config.write_text(config.read_text().replace("CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG_ENABLED=y", ""))
+        with self.assertRaisesRegex(ValueError, "boot diagnostics"):
             packager.package(self.micropython, self.idf, self.output)
         self.assertFalse(self.output.exists())
         self.git_mock.assert_not_called()

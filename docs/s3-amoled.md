@@ -16,6 +16,7 @@ Un ancien marqueur n'est jamais remplace automatiquement : choisir explicitement
 | AMOLED CLK / D0 / CS / RST, **v2** | 10 / 11 / **46** / 21 |
 | AMOLED D1 / D2 / D3 (pixels QSPI) | 12 / 13 / 14 |
 | BOOT actif bas | 0 |
+| QMI8658 I²C SDA / SCL (partagé avec le tactile) | 47 / 48 |
 | SD CLK / MOSI / MISO / CS, bus separe | 41 / 39 / 40 / 38 |
 
 **Ne pas confondre les revisions** : l'ancien profil `waveshare-s3-amoled-164`
@@ -38,11 +39,38 @@ de 255 360 octets servent a la rotation et aux transferts alignes, avec conserva
 des pixels voisins. Voir le [guide firmware QSPI](s3-qspi-build.md) pour la
 configuration de compilation et les limites du transport.
 
-L'interface paysage existante **320x172 est centree sans etirement** dans le panneau
-utilise en paysage 456x280. Des marges noires restent donc visibles. BOOT court
-retourne l'affichage a 180 degres ; BOOT long conserve l'appairage BLE. Le tactile
-FT3168 et l'IMU QMI8658 ne sont pas utilises. Aucune LED WS2812 n'est supposee,
-aucun GPIO de retroeclairage C6 n'est active sur l'AMOLED.
+L'interface reste exclusivement en **paysage 320x172**, centrée sans étirement
+dans le panneau : des marges noires restent visibles. Le pet, le quota et les
+instructions d'appairage conservent leur disposition actuelle. Le tactile FT3168
+n'est pas utilisé. Aucune LED WS2812 n'est supposée, aucun GPIO de rétroéclairage
+C6 n'est activé sur l'AMOLED.
+
+### Orientation automatique (v2 uniquement)
+
+Le QMI8658 (`WHO_AM_I = 0x05`, adresse `0x6B`) utilise I²C0 à 300 kHz, SDA=47,
+SCL=48 comme la démo constructeur. Seul l'accéléromètre est activé : ±2 g,
+62,5 Hz, lecture à 10 Hz, sans gyroscope, interruption ni accès au tactile.
+L'écran choisit entre **les deux sens paysage à 180°**, après **500 ms de position
+stable**. Il ne passe jamais en portrait. En position verticale, à plat, en
+diagonale, en chute libre ou en forte accélération, il garde sa position
+précédente. Les accès I²C ont un délai borné ; les erreurs n'arrêtent ni USB ni BLE.
+Après trois erreurs consécutives, le capteur est libéré puis retenté après 30 s.
+
+Les rotations automatiques **n'écrivent rien en flash**. BOOT court conserve la
+rotation manuelle de 180° et ajoute une correction de 180° aux décisions du capteur
+jusqu'au prochain redémarrage, sans être immédiatement annulé par l'automatisme.
+Le choix manuel reste mémorisé comme orientation de démarrage/de secours, mais la
+correction du capteur est volatile. BOOT long et la confirmation d'appairage sont
+inchangés. Sans IMU, la rotation manuelle reste disponible. C6 et ancien S3 ne
+créent aucun bus I²C et conservent les deux vues paysage manuelles.
+
+`status` expose aussi `orientation` et `imu` (capteur lisible). Tester les deux
+positions paysage sur la carte réelle, puis le passage à plat et le redémarrage : les
+tests simulés ne prouvent pas le sens du montage physique du capteur. La
+correspondance est centralisée dans `IMU_LANDSCAPE_AXIS` et `IMU_LANDSCAPE_SIGN` de
+`board_config.py` (hypothèse initiale : axe X le long du petit côté de la dalle).
+En cas d'inversion du montage sur une révision, ajuster ces deux constantes ; ne
+pas modifier les broches QSPI ni le pilote d'écran pour compenser.
 
 **Portage experimental, pas encore valide sur le materiel reel.** Une compilation
 et des tests simules ne valident ni l'ecran, ni les couleurs, ni la rotation,
@@ -54,6 +82,16 @@ Le programme Python est deja en flash interne dans le projet d'origine ; seuls
 les assets d'animation exigeaient la SD. Le pack actuel contient 73 images,
 soit **1 457 664 octets** de pixels, plus le manifeste et les metadonnees.
 La PSRAM est volatile : elle n'est pas le stockage persistant des animations.
+
+La flash de **16 Mio** laisse **14 Mio (14 680 064 octets)** au VFS après
+`0x200000` ; le firmware natif dispose séparément de 1 984 Kio pour l'application.
+Le pack de pixels occupe environ **1,39 Mio**, ou **1,50 Mio budgétés** avec le
+manifeste maximal, les allocations et les métadonnées. Le build vérifie que les
+fichiers Python, deux packs complets et 256 Kio de réserve tiennent ensemble ;
+il publie les tailles exactes dans `BUILD.json` et le résumé de l'Action. Il reste
+plus de 10 Mio de marge sur un VFS neuf avec le budget actuel. Les sources WebP et
+la prévisualisation restent sur le PC, pas sur l'ESP32. Aucun pack n'est inclus
+dans le `.bin` ou les artefacts publics.
 
 `--storage auto` consulte le profil et l'espace **effectivement disponible** via
 `os.statvfs`, pas simplement les 16 Mo annonces. **Sur la v2, il impose la flash
@@ -111,11 +149,29 @@ uv run python -m mpremote connect $Port exec "import board_config as c; print(c.
 uv run python -m mpremote connect $Port reset
 ```
 
-Les acces REPL interrompent le programme : terminer par `reset`. L'absence de fichier
-d'erreur n'est pas anormale. Un probleme d'initialisation ecran peut survenir avant
-la creation de ce journal ; utiliser alors `mpremote repl`, Ctrl+D pour observer
-le demarrage. Il reste a verifier sur carte : couleurs, sens de rotation, debit,
-USB/BLE et redemarrage a froid sans SD.
+Les acces REPL interrompent le programme : terminer par `reset`. Le journal
+`openbuddy-error.txt` indique la phase (`Stage: imports`, `display`, `assets`,
+`BLE`, `UI` ou `main loop`, notamment) et conserve l'exception Python initiale.
+Les erreurs d'initialisation de l'ecran sont aussi journalisees, dans la mesure ou
+la flash reste accessible. Le gestionnaire d'erreur ne tente plus de dessiner sur
+un bus potentiellement en panne. L'ecran est explicitement ferme a la sortie,
+y compris sur Ctrl+C ; une erreur de nettoyage n'empeche pas les autres fermetures.
+
+Une panne d'initialisation BLE laisse le transport USB et la rotation BOOT actifs,
+sans modifier les cles d'appairage. Le BLE n'est retente qu'au prochain demarrage.
+Une panne fatale du compagnon rend la main au REPL apres nettoyage, sans boucle
+automatique de redemarrage. Aucun journal n'est ecrit pour un simple Ctrl+C.
+
+L'absence de journal ne prouve pas l'absence de panne : un blocage natif QSPI,
+un reset materiel ou une flash inaccessible ne produisent pas necessairement
+d'exception Python. Les traces serie `OpenBuddy startup: ...` aident alors a
+identifier la derniere phase atteinte. Les attentes QSPI natives restent non
+bornees : les timeouts des outils PC ne debloquent pas un transfert DMA sur la
+carte. Voir le [depannage Windows](../README-ESP32-S3-Windows.md#si-ça-bloque)
+pour les delais des outils et le reset manuel.
+
+Il reste a verifier sur carte : couleurs, sens de rotation, debit, USB/BLE et
+redemarrage a froid sans SD.
 
 Sources constructeur :
 le [depot v2 Waveshare](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.64-v2),
@@ -124,6 +180,9 @@ commit de reference `21b952243d306692774f3b5bfeb3eb5cff10f851` :
 `Arduino/examples/06_LVGL_Test/lcd_config.h` confirment CS=46, CLK=10, D0..D3=11..14,
 RST=21, le decalage de 20 colonnes et les fenetres alignees sur 2 pixels.
 La sequence d'initialisation existante correspond a celle du constructeur.
+`ESP-IDF/02_I2C_QMI8658/components/i2c_bsp/i2c_bsp.c` et
+`components/qmi8658c/qmi8658c.{c,h}` de cet exemple confirment les broches I²C,
+la fréquence, l'adresse, l'identité et les registres de l'accéléromètre.
 Le schema `schematic/ESP32-S3-Touch-AMOLED-1.64-Rev1.1.pdf` confirme egalement
 GPIO46 pour LCD_CS ; GPIO9 est relie a l'interruption de l'IMU, pas au CS de l'ecran.
 

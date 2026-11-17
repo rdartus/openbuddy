@@ -50,7 +50,10 @@ class LCD(TextRenderer):
             self.set_orientation(orientation)
             self._cmd(0x51, b"\x80")  # Moderate AMOLED brightness, no PWM backlight.
         except BaseException:
-            self.close()
+            try:
+                self.close()
+            except Exception:
+                pass  # Preserve the initialization error if native cleanup also fails.
             raise
 
     def close(self):

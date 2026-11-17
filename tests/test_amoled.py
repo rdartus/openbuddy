@@ -271,6 +271,22 @@ class AMOLEDTests(unittest.TestCase):
                 self.driver.LCD()
         self.buses[-1].deinit.assert_called_once_with()
 
+    def test_initialization_error_survives_native_cleanup_failure(self):
+        bus_type = self.dependencies["amoled_qspi"].Bus
+
+        def failing_bus(**kwargs):
+            bus = bus_type(**kwargs)
+            bus.deinit.side_effect = OSError("Native cleanup failed")
+            return bus
+
+        primary = OSError("Primary reset pin failure")
+        with patch.object(self.driver.amoled_qspi, "Bus", failing_bus), \
+                patch.object(self.driver, "Pin", side_effect=primary):
+            with self.assertRaises(OSError) as error:
+                self.driver.LCD()
+        self.assertIs(error.exception, primary)
+        self.buses[-1].deinit.assert_called_once_with()
+
     def test_missing_native_module_has_actionable_import_error(self):
         dependencies = dict(self.dependencies, amoled_qspi=None)
         del dependencies["amoled_qspi"]

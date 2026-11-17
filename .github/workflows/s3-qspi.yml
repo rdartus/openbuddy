@@ -17,7 +17,7 @@ on:
       - 'THIRD_PARTY.md'
       - 'integration/openbuddy/**'
   push:
-    branches: ['master', 'feat/esp32-s3-amoled-164']
+    branches: ['master', 'feat/esp32-s3-amoled-164', 'orientation']
     tags: ['s3-qspi-*']
     paths:
       - '.github/workflows/s3-qspi.yml'
@@ -86,6 +86,28 @@ jobs:
         run: |
           . /opt/esp/idf/export.sh
           bash tools/build_s3_qspi.sh /tmp/micropython
+      - name: Summarize internal flash capacity
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          build = json.loads(Path('dist/s3-qspi/BUILD.json').read_text())
+          budget = build['flash_budget']
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('## Flash interne S3 v2 — pet sans TF\n\n')
+              summary.write('| Mesure | Octets |\n|---|---:|\n')
+              for key in ('app_bytes', 'app_partition_bytes', 'vfs_bytes', 'python_budget_bytes',
+                          'pet_pixel_bytes', 'pet_budget_bytes', 'reserve_bytes',
+                          'required_vfs_bytes', 'spare_vfs_bytes'):
+                  summary.write(f'| `{key}` | {budget[key]} |\n')
+              summary.write('\nBudget VFS : fichiers Python + **deux packs** (remplacement inclus) '
+                            '+ métadonnées/allocations + réserve de 256 Kio. '
+                            'L’installation vérifie aussi l’espace libre réel sur la carte.\n')
+              summary.write(f'\nUSB : **{build["usb_backend"]}** '
+                            f'(`{build["usb_vid"]:04x}:{build["usb_pid"]:04x}`), '
+                            'sans bascule vers TinyUSB/OTG au démarrage.\n')
+          PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: openbuddy-s3-amoled-qspi
@@ -113,4 +135,4 @@ jobs:
         run: |
           gh release create "$TAG" firmware/* --verify-tag --target "$COMMIT" --prerelease \
             --title "S3 AMOLED v2 QSPI $TAG (experimental)" \
-            --notes "Waveshare S3 Touch AMOLED 1.64 v2 (CS GPIO46), 16 MiB flash, octal PSRAM. Experimental MicroPython 1.29.0 / ESP-IDF 5.5.2 with native QSPI API v2. Pet storage is internal flash only; install artwork separately via pc.pet. Hardware validation required. Download the matching source ZIP and follow its Windows uv instructions. No pet artwork is included."
+            --notes "Waveshare S3 Touch AMOLED 1.64 v2 (CS GPIO46), 16 MiB flash, octal PSRAM. Experimental MicroPython 1.29.0 / ESP-IDF 5.5.2 with native QSPI API v2 and QMI8658 auto orientation. Pet storage is internal flash only; install artwork separately via pc.pet. BUILD.json includes checked application/VFS budgets. Hardware validation required. Download the matching source ZIP and follow its Windows uv instructions. No pet artwork is included."

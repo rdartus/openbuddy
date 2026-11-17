@@ -300,6 +300,56 @@ class InstallerTests(unittest.TestCase):
         self.assertEqual(run.call_count, 2)
         self.assertEqual(run.call_args.args[0][-1], "reset")
 
+    def test_host_install_and_reset_have_bounded_timeouts(self):
+        folder = self.make_pack()
+        args = SimpleNamespace(pack=str(folder), port="auto", storage="internal", replace=False,
+                               timeout=900)
+        with patch.object(pet.subprocess, "run") as run:
+            pet.install(args)
+        self.assertEqual([call.kwargs["timeout"] for call in run.call_args_list],
+                         [900, pet.RESET_TIMEOUT])
+        self.assertTrue(all(call.kwargs["check"] for call in run.call_args_list))
+
+    def test_host_timeout_or_interrupt_is_preserved_when_reset_also_fails(self):
+        folder = self.make_pack()
+        args = SimpleNamespace(pack=str(folder), port="auto", storage="internal", replace=True)
+        for failure in (subprocess.TimeoutExpired("transfer", pet.INSTALL_TIMEOUT),
+                        subprocess.CalledProcessError(1, "transfer"), KeyboardInterrupt()):
+            with self.subTest(failure=type(failure).__name__), \
+                    patch.object(pet.subprocess, "run", side_effect=[failure,
+                        subprocess.TimeoutExpired("reset", pet.RESET_TIMEOUT)]) as run, \
+                    patch.object(sys, "stderr"):
+                with self.assertRaises(type(failure)) as error:
+                    pet.install(args)
+                self.assertIs(error.exception, failure)
+                self.assertEqual(run.call_args_list[0].kwargs["timeout"], pet.INSTALL_TIMEOUT)
+                self.assertEqual(run.call_args.args[0][-1], "reset")
+
+    def test_host_reports_failed_reset_after_successful_transfer(self):
+        folder = self.make_pack()
+        args = SimpleNamespace(pack=str(folder), port="auto", storage="internal", replace=False)
+        with patch.object(pet.subprocess, "run", side_effect=[None, OSError("reset failed")]), \
+                patch.object(sys, "stderr"):
+            with self.assertRaisesRegex(OSError, "could not be restarted"):
+                pet.install(args)
+
+    def test_host_invalid_timeout_never_opens_the_port(self):
+        with patch.object(pet.subprocess, "run") as run:
+            with self.assertRaisesRegex(ValueError, "timeout must be positive"):
+                pet.install(SimpleNamespace(timeout=0))
+        run.assert_not_called()
+
+    def test_cli_explains_timeout_and_incomplete_pack(self):
+        with patch.object(sys, "argv", ["pet", "install", "pack"]), \
+                patch.object(pet, "install", side_effect=subprocess.TimeoutExpired("transfer", 600)), \
+                patch.object(sys, "stderr") as stderr:
+            with self.assertRaises(SystemExit) as error:
+                pet.main()
+        self.assertEqual(error.exception.code, 1)
+        output = " ".join(str(call.args[0]) for call in stderr.write.call_args_list)
+        self.assertIn("Installation timed out after 600 seconds", output)
+        self.assertIn("--replace", output)
+
     def test_mpremote_copy_preserves_remote_cwd_and_installer_globals(self):
         try:
             from mpremote.commands import do_filesystem_cp
@@ -352,6 +402,7 @@ class InstallerTests(unittest.TestCase):
             pet.main()
         args = install.call_args.args[0]
         self.assertEqual((args.port, args.storage, args.replace), ("auto", "auto", False))
+        self.assertEqual(args.timeout, pet.INSTALL_TIMEOUT)
         with patch.object(sys, "argv", ["pet", "convert"]), patch.object(pet, "convert_command") as convert:
             pet.main()
         self.assertEqual(convert.call_args.args[0].pet, pet.DEFAULT_PET)

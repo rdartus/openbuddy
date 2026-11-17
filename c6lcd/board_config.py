@@ -46,6 +46,7 @@ ORIENTATIONS = {
 }
 ORDER = ("portrait", "landscape", "portrait_inv", "landscape_inv")
 DEFAULT_ORIENTATION = "landscape"
+AUTO_ORIENTATION = False
 
 # Stock firmware defaults to C6; dedicated builds freeze their board identity.
 # A saved explicit profile always wins. The chip model cannot identify PCB wiring.
@@ -79,5 +80,13 @@ if BOARD_MODEL in ("waveshare-s3-amoled-164", "waveshare-s3-amoled-164-v2"):
         PET_STORAGE = "internal"
         PET_DIRECTORY = "/openbuddy/pets"
         PET_SELECTION = "/openbuddy/active.json"
+        AUTO_ORIENTATION = True
+        IMU_I2C_ID = 0
+        IMU_SDA, IMU_SCL = 47, 48
+        IMU_I2C_FREQ = 300_000
+        IMU_ADDRESS = 0x6B
+        # Sensor axis along the panel's short edge; validate its sign on hardware.
+        IMU_LANDSCAPE_AXIS = 0
+        IMU_LANDSCAPE_SIGN = 1
 elif BOARD_MODEL != "waveshare-c6-lcd-147":
     raise ValueError("Unknown OpenBuddy board profile: " + BOARD_MODEL)

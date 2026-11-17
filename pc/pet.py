@@ -14,6 +14,8 @@ DEFAULT_PET = "super-saiyan-goku-combat"
 BACKGROUND = (8, 12, 20)
 CELL = (192, 208)
 OUTPUT_SIZE = (96, 104)
+INSTALL_TIMEOUT = 600
+RESET_TIMEOUT = 20
 # Codex Pets src/domain/config.ts, blob 12403682002a5f4415c65e1514317c7e978161bc.
 # A clip is a sequence of (atlas row, frame count) segments played back to back.
 # Rows 9-10 only exist in v2 atlases: sixteen head-turn frames of the idle pose.
@@ -152,6 +154,9 @@ def convert_command(args):
 
 
 def install(args):
+    timeout = getattr(args, "timeout", INSTALL_TIMEOUT)
+    if timeout <= 0:
+        raise ValueError("--timeout must be positive")
     folder = Path(args.pack).resolve()
     manifest_path = folder / "manifest.json"
     if manifest_path.stat().st_size > 8192:
@@ -195,11 +200,20 @@ def install(args):
     print("Installing pack (%s, %d bytes); BLE will disconnect during USB transfer." % (
         args.storage, sum(sizes)), flush=True)
     try:
-        subprocess.run(command, check=True)
+        # Kill and reap a stalled mpremote before opening the same port for reset.
+        subprocess.run(command, timeout=timeout, check=True)
     finally:
-        # Also restart after an interrupted transfer; never leave the companion in REPL.
-        subprocess.run([sys.executable, "-m", "mpremote", "connect", args.port, "reset"],
-                       timeout=20, check=False)
+        reset_ok = False
+        try:
+            subprocess.run([sys.executable, "-m", "mpremote", "connect", args.port, "reset"],
+                           timeout=RESET_TIMEOUT, check=True)
+            reset_ok = True
+        except (OSError, subprocess.SubprocessError) as error:
+            # Preserve a transfer failure, including timeouts and Ctrl+C.
+            print("Warning: automatic reset failed (%s); press RST on the board." %
+                  type(error).__name__, file=sys.stderr)
+    if not reset_ok:
+        raise OSError("Pack installed, but the board could not be restarted")
 
 
 def main():
@@ -216,12 +230,17 @@ def main():
     installation.add_argument("--storage", choices=("auto", "sd", "internal"), default="auto",
                               help="Follow the board policy by default; S3 AMOLED v2 requires internal flash")
     installation.add_argument("--replace", action="store_true", help="Replace an existing OpenBuddy pack")
+    installation.add_argument("--timeout", type=int, default=INSTALL_TIMEOUT, metavar="SECONDS",
+                              help="Maximum install duration (default: %(default)s seconds)")
     args = parser.parse_args()
     try:
         if args.command == "convert":
             convert_command(args)
         else:
             install(args)
+    except subprocess.TimeoutExpired as error:
+        parser.exit(1, "Installation timed out after %s seconds; mpremote was stopped. "
+                    "The pack may be incomplete; retry with --replace.\n" % error.timeout)
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         parser.exit(1, "Error: %s\n" % error)
 

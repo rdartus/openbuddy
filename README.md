@@ -8,7 +8,8 @@ Portage **Waveshare ESP32-S3-Touch-AMOLED-1.64 v2 (280x456, CS GPIO46, 16 Mo fla
 8 Mo PSRAM)** : pet **en flash interne, sans microSD ni repli TF**, avec un firmware
 experimental integrant le module natif **`amoled_qspi`**, pas le `.bin` MicroPython
 officiel. **[Installation Windows ESP32-S3 : suivre ce README](README-ESP32-S3-Windows.md).**
-Ce portage reste a valider sur la carte reelle.
+Le QMI8658 choisit automatiquement entre les deux sens paysage à 180°, sans mode
+portrait. Ce portage reste a valider sur la carte reelle.
 
 ![Démonstration OpenBuddy : les événements OpenCode synchronisent les écrans et le pet Goku en Local USB ou Bluetooth.](docs/media/openbuddy-demo.gif)
 
@@ -242,6 +243,9 @@ Sans pack installé, un robot intégré prend le relais. Les sprites et les pack
 du pet ne sont pas fournis dans le dépôt ou les kits : les visuels ci-dessus sont
 une démonstration de l'affichage, pas un pack d'assets. Le bouton BOOT (appui court)
 retourne l'affichage de 180° ; l'orientation choisie est mémorisée.
+Sur le S3 v2, l'accéléromètre adapte aussi ce sens automatiquement, après 500 ms
+de stabilité ; à plat ou en position verticale, la dernière vue est conservée.
+BOOT apporte une correction de 180° au capteur jusqu'au redémarrage.
 
 - [Préparer et installer une animation](docs/animations.md)
 - [Afficher le quota du fournisseur (ex. GitHub Copilot)](docs/opencode-events.md#quota-du-fournisseur)

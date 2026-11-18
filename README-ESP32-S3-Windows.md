@@ -7,8 +7,8 @@ Le pet sera installé **dans la flash de l’ESP32**, sans carte TF/microSD.
 **À prévoir :** Windows 10/11, Git, [uv](https://docs.astral.sh/uv/getting-started/installation/),
 OpenCode v2 et un câble USB-C **de données**. Pas besoin de compiler sur Windows,
 ni d’installer Node.js/npm. L’accéléromètre QMI8658 choisit automatiquement entre
-les deux sens paysage à 180° ; aucun portrait ni tactile. Le portage et le sens de l’axe
-restent à valider sur la carte réelle.
+les deux sens paysage à 180° ; aucun portrait ni tactile. L’axe Y et son signe ont
+été mesurés sur une carte v2 ; vérifier le résultat visuel après déploiement.
 
 > Toutes les commandes se lancent dans **PowerShell**, depuis le dossier `openbuddy`.
 > **Arrêter à la première erreur.** Fermer Thonny, les moniteurs série et le pont
@@ -69,7 +69,7 @@ Vérifier le commit, le profil et l’empreinte avant de flasher :
 ```powershell
 $Build = Get-Content .\dist\s3-qspi\BUILD.json -Raw | ConvertFrom-Json
 if ($Build.openbuddy_commit -ne (git rev-parse HEAD).Trim() -or $Build.openbuddy_dirty) { throw "Le build ne correspond pas au depot propre" }
-if ($Build.board -ne "waveshare-s3-amoled-164-v2" -or $Build.lcd_cs -ne 46 -or $Build.flash_bytes -ne 16777216 -or $Build.pet_storage -ne "internal" -or $Build.qspi_api_version -ne 3) { throw "Mauvais firmware S3 v2" }
+if ($Build.board -ne "waveshare-s3-amoled-164-v2" -or $Build.lcd_cs -ne 46 -or $Build.flash_bytes -ne 16777216 -or $Build.pet_storage -ne "internal" -or $Build.qspi_api_version -ne 4) { throw "Mauvais firmware S3 v2" }
 if ($Build.orientation_sensor -ne "qmi8658" -or $Build.flash_budget.vfs_bytes -ne 14680064 -or $Build.flash_budget.spare_vfs_bytes -le 0) { throw "Build sans orientation ou budget flash verifie" }
 if ($Build.usb_backend -ne "usb-serial-jtag" -or $Build.usb_vid -ne 0x303A -or $Build.usb_pid -ne 0x1001) { throw "Ancien build USB : telecharger le firmware Serial/JTAG corrige" }
 $Hash = (Get-FileHash .\dist\s3-qspi\openbuddy-s3-amoled-qspi.bin -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -124,9 +124,9 @@ mise à jour des fichiers Python ne peut pas corriger le backend USB du `.bin`.
 **Utiliser exactement le profil ci-dessous, avec le suffixe `-v2`.**
 Le déploiement vérifie le module natif avant de copier les fichiers.
 Même si tu avais déjà déployé OpenBuddy, cette commande corrige l’ancien profil GPIO9.
-Le pilote accéléré exige **`amoled_qspi.API_VERSION >= 3`** : reflasher d’abord
+Le pilote accéléré exige **`amoled_qspi.API_VERSION >= 4`** : reflasher d’abord
 le nouveau `.bin` vérifié, sans effacer la flash, puis déployer les fichiers
-Python du même commit. Le `.bin` API v2 et ces fichiers ne sont pas compatibles.
+Python du même commit. Les `.bin` API v2/v3 et ces fichiers ne sont pas compatibles.
 
 ```powershell
 uv run python -m pc.deploy --port $Port --board waveshare-s3-amoled-164-v2
@@ -141,6 +141,11 @@ try {
 
 La dalle entière doit afficher **rouge, vert, bleu, noir, blanc**, 1,5 seconde par
 couleur. Le `reset` relance OpenBuddy, même si le test échoue.
+L'interface suivante doit occuper les **456 × 280 pixels en paysage** ; une fois
+installé à l'étape 5, le pet est agrandi en ×2 sans nouvelle conversion du pack.
+La petite interface 320 × 172 ne doit plus rester au milieu de l'écran :
+les dispositions sont choisies par le profil dans
+`board_config.py`.
 **Si l’écran reste noir ou affiche mal les couleurs, arrêter ici et conserver
 la sortie du terminal.** Ne pas installer le pet ni multiplier les effacements.
 
@@ -149,8 +154,8 @@ attendre au moins une seconde dans chacun : l’interface doit rester lisible en
 paysage. Posée à plat ou tenue verticalement, la carte conserve la dernière
 orientation. BOOT court retourne toujours la vue à 180° (correction du capteur
 jusqu’au redémarrage), BOOT long conserve l’appairage. En cas de capteur absent,
-la rotation manuelle reste utilisable. Ne pas considérer le sens physique des
-axes comme validé avant cet essai.
+la rotation manuelle reste utilisable. La mesure de l'axe ne remplace pas cet
+essai visuel de rotation.
 
 ### Si le système de fichiers est corrompu
 
@@ -206,6 +211,37 @@ après initialisation du capteur ; au tout début, `"imu": false` peut encore
 apparaître. Si les sens sont incorrects, voir les constantes d’axes et les
 limites de validation dans le [guide S3](docs/s3-amoled.md#orientation-automatique-v2-uniquement).
 
+### Si la rotation réagit au portrait plutôt qu'au paysage
+
+Une ancienne version utilisait l'axe **X** du QMI8658. Sur une carte v2 mesurée,
+la gravité en paysage est sur **Y** : environ +16 200 avec USB-C à gauche et
+−16 100 avec USB-C à droite (1 g = 16 384). Le profil corrigé utilise Y avec
+le signe négatif ; en portrait il conserve la dernière orientation paysage.
+
+Si le firmware natif installé est déjà en **API v4** et que seul le code Python
+change, arrêter le pont puis redéployer les fichiers du dépôt mis à jour avec
+la commande de l'étape 4. **Pas besoin de reflasher le `.bin` ni d'effacer la
+flash.** Le précontrôle de `pc.deploy` refuse un firmware natif incompatible.
+Après le déploiement, vérifier les deux sens et relancer le pont (étape 6).
+
+Pour mesurer les axes sur une autre révision, tenir la carte debout, écran face
+à soi, dans un sens paysage, puis répéter dans l'autre sens. Le pont doit être
+arrêté avant chaque accès au port. Depuis la racine du dépôt :
+
+```powershell
+uv run python -m pc.opencode stop
+try {
+    uv run python -m mpremote connect $Port run tools/test_orientation.py
+} finally {
+    uv run python -m mpremote connect $Port reset
+}
+```
+
+Le diagnostic affiche dix mesures X/Y/Z en une seconde, sans modifier la
+flash ; le `reset` relance le compagnon. Répéter pour l'autre sens et relancer
+ensuite le pont (étape 6). Le signe de l'axe mesuré peut varier sur une autre
+révision : ne pas le supposer d'après le nom du capteur.
+
 Si la conversion existe déjà, la conserver ; utiliser `convert --force` seulement
 pour la refaire. Si le pack est déjà sur la carte, le conserver ou ajouter
 **`--replace`** à la commande `install` pour le remplacer.
@@ -232,8 +268,9 @@ uv run python -m pc.opencode --serial auto
 n’est nécessaire. `auto` exige une seule carte Espressif branchée ; sinon utiliser
 `--serial` avec son port explicite.
 Le build **API v2** souffre d’une lenteur de rendu qui bloque parfois la boucle
-USB pendant plusieurs secondes. Le build API v3 déplace ces opérations dans le
-module natif, mais sa réactivité reste à valider sur matériel. Si le pont
+USB pendant plusieurs secondes. Le build API v4 reprend l'accélération native
+de l'API v3 et ajoute l'interface plein écran et le pet ×2 ; sa réactivité
+reste à valider sur matériel. Si le pont
 affiche `USB unavailable: TimeoutError - retrying`, conserver sa sortie ; ne
 pas effacer la flash ni simplement augmenter le timeout. Voir les
 [mesures et le correctif](docs/s3-qspi-build.md#performance-du-rendu-et-timeouts-usb).
@@ -248,7 +285,7 @@ Sans événement d’OpenCode, l’état `OFFLINE` est normal.
   l’étape 3 et vérifier `usb_backend: "usb-serial-jtag"` dans `BUILD.json`.
 - **Port occupé** : arrêter le pont avec `Ctrl+C` et fermer les autres outils série.
 - **`status` expire alors que le port est visible** : vérifier d’abord que le
-  nouveau build est en API v3. Sur l’ancien build API v2, le rendu peut bloquer
+  nouveau build est en API v4. Sur l’ancien build API v2, le rendu peut bloquer
   la boucle USB bien après le démarrage. Ce message seul ne démontre ni un
   port occupé ni une flash corrompue.
 - **Déploiement ou transfert bloqué** : les outils arrêtent leur processus `mpremote`
@@ -259,8 +296,10 @@ Sans événement d’OpenCode, l’état `OFFLINE` est normal.
   `--replace`, sans effacer la flash.
 - **Module `amoled_qspi` absent ou trop ancien** : reflasher le `.bin` de l’étape 2 ;
   `pc.deploy` seul ne peut pas installer le module C.
-- **Écran noir** : vérifier le profil **`waveshare-s3-amoled-164-v2`**, puis le test
-  de l’étape 4. Les marges noires autour de l’interface centrée sont normales.
+- **Écran noir ou interface encore petite au centre** : vérifier le profil
+  **`waveshare-s3-amoled-164-v2`**, l'API v4 et le commit identique pour le `.bin`
+  et les fichiers Python, puis le test de l’étape 4. Les anciennes marges autour
+  de l'interface 320 × 172 ne sont plus attendues.
 - **Pas de pet** : vérifier le résultat de l’étape 5, sans ajouter de carte TF.
 - **BLE indisponible au démarrage** : le compagnon reste utilisable par USB et
   BOOT court conserve la rotation. Le détail est dans `openbuddy-error.txt`, avec

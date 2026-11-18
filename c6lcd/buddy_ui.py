@@ -3,6 +3,7 @@
 import time
 
 from st7789 import rgb
+import board_config as cfg
 
 COLORS = {
     "offline": (72, 84, 108), "idle": (72, 132, 180),
@@ -42,19 +43,26 @@ class BuddyUI:
 
     def _face(self, accent, frame, state):
         lcd = self.lcd
-        lcd.fill_rect(16, 43, 82, 88, BACKGROUND)
+        stage_x, stage_y, stage_w, stage_h = cfg.UI_PET_STAGE
+        scale = cfg.UI_PET_SCALE
+        lcd.fill_rect(stage_x, stage_y, stage_w, stage_h, BACKGROUND)
         bob = 3 if frame % 2 and state in ("thinking", "working") else 0
-        x, y = 25, 55 + bob
-        lcd.fill_rect(x + 28, y - 10, 5, 10, accent)
-        lcd.fill_rect(x + 5, y, 56, 48, accent)
-        lcd.fill_rect(x, y + 10, 66, 30, accent)
-        lcd.fill_rect(x + 10, y + 8, 46, 28, BACKGROUND)
+        x, y = 17, 20 + bob
+
+        def rect(dx, dy, w, h, color):
+            lcd.fill_rect(stage_x + (x + dx) * scale,
+                          stage_y + (y + dy) * scale, w * scale, h * scale, color)
+
+        rect(28, -10, 5, 10, accent)
+        rect(5, 0, 56, 48, accent)
+        rect(0, 10, 66, 30, accent)
+        rect(10, 8, 46, 28, BACKGROUND)
         height = 2 if frame % 8 == 0 else 8
-        lcd.fill_rect(x + 18, y + 17, 7, height, WHITE)
-        lcd.fill_rect(x + 41, y + 17, 7, height, WHITE)
-        lcd.fill_rect(x + 24, y + 43, 18, 3, BACKGROUND)
-        lcd.fill_rect(x + 10, y + 48, 12, 8, accent)
-        lcd.fill_rect(x + 44, y + 48, 12, 8, accent)
+        rect(18, 17, 7, height, WHITE)
+        rect(41, 17, 7, height, WHITE)
+        rect(24, 43, 18, 3, BACKGROUND)
+        rect(10, 48, 12, 8, accent)
+        rect(44, 48, 12, 8, accent)
 
     def draw(self, buddy, now):
         usb = getattr(buddy, "kind", None) == "usb"
@@ -87,22 +95,23 @@ class BuddyUI:
             lcd = self.lcd
             lcd.fill_rect(0, 0, lcd.w, lcd.h, BACKGROUND)
             lcd.fill_rect(0, 0, lcd.w, 3, accent)
-            lcd.text("OPENBUDDY", 12, 15, WHITE, BACKGROUND)
-            lcd.text(link, 224, 15, MUTED, BACKGROUND)
-            lcd.text(LABELS[state], 124, 55, accent, BACKGROUND, 2)
+            lcd.text("OPENBUDDY", 12, cfg.UI_HEADER_Y, WHITE, BACKGROUND)
+            lcd.text(link, cfg.UI_LINK_X, cfg.UI_HEADER_Y, MUTED, BACKGROUND)
+            lcd.text(LABELS[state], cfg.UI_TEXT_X, cfg.UI_STATE_Y, accent, BACKGROUND, 2)
             scale = 2 if buddy.passkey is not None else 1
-            lcd.text(detail[:24], 124, 87, WHITE, BACKGROUND, scale)
+            max_detail = min(24, (lcd.w - cfg.UI_TEXT_X) // (8 * scale))
+            lcd.text(detail[:max_detail], cfg.UI_TEXT_X, cfg.UI_DETAIL_Y, WHITE, BACKGROUND, scale)
             asset_label = "PET / FLASH" if getattr(self.player, "source", None) == "internal" else "PET / MICROSD"
             lcd.text(quota or (asset_label if asset_ready
                                else "USB SERIAL / v1" if usb else "HID + GATT / v1"),
-                     124, 113, MUTED, BACKGROUND)
-            lcd.fill_rect(12, 141, 296, 1, accent)
-            lcd.text(footer, 12, 153, MUTED, BACKGROUND)
+                      cfg.UI_TEXT_X, cfg.UI_INFO_Y, MUTED, BACKGROUND)
+            lcd.fill_rect(12, cfg.UI_DIVIDER_Y, lcd.w - 24, 1, accent)
+            lcd.text(footer[:(lcd.w - 24) // 8], 12, cfg.UI_FOOTER_Y, MUTED, BACKGROUND)
         frame = now // 350
         played = asset_ready and self.player.draw(state, now, force=changed)
         if not played and frame != self.face_frame:
             if asset_ready:
-                self.lcd.fill_rect(8, 35, 104, 104, BACKGROUND)
+                self.lcd.fill_rect(*cfg.UI_PET_STAGE, BACKGROUND)
             self.face_frame = frame
             self._face(accent, frame, state)
         # RGB components stay below 40; do not blink at strobe frequencies.

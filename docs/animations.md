@@ -18,8 +18,8 @@ Le firmware lit le pet **Super Saiyan Goku Combat**, partagé par
 Le PC envoie uniquement un état BLE : les images restent sur la SD et continuent
 à s'animer même sans programme PC. `OFFLINE` utilise l'animation de repos.
 
-- Écran : paysage **320×172**, USB-C à gauche.
-- Personnage : **96×104**, à gauche ; état et libellé à droite.
+- Écran C6 : paysage **320×172**, USB-C à gauche ; S3 AMOLED : **456×280**.
+- Personnage : **96×104** sur C6, agrandi à **192×208** sur S3 ; état et libellé à droite.
 - Conversion à l'échelle 1/2, plus proche voisin, sans étirement ni lissage.
 - Transparence compositée sur le même fond sombre que l'interface : RGB `(8,12,20)`.
 - Images **RGB565 big-endian** prêtes à envoyer à l'écran, sans décodeur WebP/PNG sur l'ESP32.

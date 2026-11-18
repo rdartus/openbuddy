@@ -48,7 +48,8 @@ les métadonnées et une réserve de 256 Kio. Ce contrôle ne remplace pas `stat
 
 **Experimental : une compilation et des tests simules ne valident pas l'ecran
 reel, les couleurs, la rotation ou les redemarrages.** Le QMI8658 choisit entre les
-deux sens paysage sur le profil v2 ; le sens de l'axe reste à valider sur matériel.
+deux sens paysage sur le profil v2 ; son axe Y et son signe ont été mesurés sur une
+carte, mais la rotation corrigée reste à vérifier visuellement après déploiement.
 Le tactile n'est pas utilisé. Aucune animation proprietaire n'est distribuee avec le firmware.
 
 ## GitHub Actions
@@ -60,7 +61,7 @@ Il peut aussi etre lance manuellement
 une fois disponible sur la branche par defaut. Il produit un artefact
 `openbuddy-s3-amoled-qspi` conserve 30 jours :
 
-- `openbuddy-s3-amoled-qspi.bin` : MicroPython avec le module natif **API v3**, sans
+- `openbuddy-s3-amoled-qspi.bin` : MicroPython avec le module natif **API v4**, sans
   application Python. L'identite par defaut v2 est figee dans `openbuddy_build`.
 - `openbuddy-s3-qspi-files.zip` : fichiers Python correspondants, diagnostic et licences.
 - `BUILD.json` : commits, etat sale/propre, empreintes, profil v2, CS=46,
@@ -108,14 +109,17 @@ Le panneau ne prend pas en charge `swap_xy` selon le pilote constructeur :
 basculer simplement un registre de rotation n’est pas un correctif établi.
 Augmenter le timeout du pont ne rendrait pas les animations ou les états réactifs.
 
-Le correctif **API v3** déplace dans `amoled_qspi` la rotation RGB565, le
+Le correctif **API v3** a déplacé dans `amoled_qspi` la rotation RGB565, le
 remplissage des rectangles et l’extraction des lignes depuis le buffer physique.
 Le transport QSPI et son tampon DMA de 4 092 octets ne changent pas. Les mises
 à jour conservent l’alignement pair, les voisins via le buffer d’ombre, le gap
 de 20 colonnes et les deux sens paysage ; un effacement plein écran envoie
-directement le buffer contigu. `co5300.py` refuse l’API v2, et le précontrôle
+directement le buffer contigu. L'**API v4** transmet aussi la taille du canevas
+et le facteur d'agrandissement (×2) au code natif : le profil S3 utilise les
+456×280 pixels de la dalle, sans reconvertir le pet 96×104. Le C6 conserve son
+interface 320×172. `co5300.py` refuse l’API v2/v3, et le précontrôle
 de `pc.deploy` bloque un déploiement Python incompatible avant toute copie.
-**Cela nécessite un nouveau `.bin` API v3** et les fichiers Python du même commit.
+**Cela nécessite un nouveau `.bin` API v4** et les fichiers Python du même commit.
 Les tests simulés ne suffisent pas : mesurer sur carte le temps par image, la
 latence USB, les couleurs et les deux orientations après compilation GitHub
 Actions. Ne pas déduire un gain matériel avant cet essai.

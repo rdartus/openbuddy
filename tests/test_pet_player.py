@@ -15,8 +15,8 @@ class FakeLCD:
     def __init__(self):
         self.frames = []
 
-    def blit(self, buffer, x, y, width, height):
-        self.frames.append((bytes(buffer), x, y, width, height))
+    def blit(self, buffer, x, y, width, height, scale=1):
+        self.frames.append((bytes(buffer), x, y, width, height, scale))
 
 
 class PlayerTests(unittest.TestCase):
@@ -65,7 +65,17 @@ class PlayerTests(unittest.TestCase):
         for now in (0, 260, 520):
             self.assertTrue(player.draw("idle", now))
         self.assertEqual([frame[0] for frame in self.lcd.frames],
-                         [b"\xf8\x00" * 4, b"\x00\x1f" * 4, b"\xf8\x00" * 4])
+                          [b"\xf8\x00" * 4, b"\x00\x1f" * 4, b"\xf8\x00" * 4])
+        self.assertEqual(self.lcd.frames[0][1:], (59, 86, 2, 2, 1))
+
+    def test_s3_profile_scales_pet_without_changing_pack_or_frame_buffer(self):
+        with patch.object(pet_player.cfg, "UI_PET_SCALE", 2), \
+                patch.object(pet_player.cfg, "UI_PET_STAGE", (8, 36, 208, 208)):
+            player = self.player()
+            self.assertEqual(len(player.buffer), 8)
+            self.assertEqual((player.x, player.y), (110, 138))
+            self.assertTrue(player.draw("idle", 0))
+            self.assertEqual(self.lcd.frames[0], (b"\xf8\x00" * 4, 110, 138, 2, 2, 2))
 
     def test_force_redraw_reuses_cached_frame_without_advancing(self):
         player = self.player()

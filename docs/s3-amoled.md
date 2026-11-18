@@ -22,7 +22,7 @@ Un ancien marqueur n'est jamais remplace automatiquement : choisir explicitement
 **Ne pas confondre les revisions** : l'ancien profil `waveshare-s3-amoled-164`
 conserve CS=GPIO9 et son comportement SD optionnel. Le profil **v2 utilise GPIO46**,
 40 MHz comme le constructeur, et le pet exclusivement en flash interne.
-Le choix du CS est transmis au module natif (`Bus(cs=...)`, API v3), y compris
+Le choix du CS est transmis au module natif (`Bus(cs=...)`, API v4), y compris
 pour liberer correctement la broche apres une erreur ou un reset logiciel.
 
 Les anciennes demos Waveshare nomment le pilote **SH8601**, les nouvelles
@@ -39,9 +39,10 @@ de 255 360 octets servent a la rotation et aux transferts alignes, avec conserva
 des pixels voisins. Voir le [guide firmware QSPI](s3-qspi-build.md) pour la
 configuration de compilation et les limites du transport.
 
-L'interface reste exclusivement en **paysage 320x172**, centrée sans étirement
-dans le panneau : des marges noires restent visibles. Le pet, le quota et les
-instructions d'appairage conservent leur disposition actuelle. Le tactile FT3168
+L'interface reste exclusivement en **paysage 456x280**, sur toute la dalle.
+La geometrie est definie par profil dans `board_config.py` : le C6 garde son
+interface 320x172, le S3 utilise tout son panneau et agrandit le pet x2 au plus
+proche voisin, sans changer le pack 96x104 ni le contenu des textes. Le tactile FT3168
 n'est pas utilisé. Aucune LED WS2812 n'est supposée, aucun GPIO de rétroéclairage
 C6 n'est activé sur l'AMOLED.
 
@@ -64,17 +65,20 @@ correction du capteur est volatile. BOOT long et la confirmation d'appairage son
 inchangés. Sans IMU, la rotation manuelle reste disponible. C6 et ancien S3 ne
 créent aucun bus I²C et conservent les deux vues paysage manuelles.
 
-`status` expose aussi `orientation` et `imu` (capteur lisible). Tester les deux
-positions paysage sur la carte réelle, puis le passage à plat et le redémarrage : les
-tests simulés ne prouvent pas le sens du montage physique du capteur. La
-correspondance est centralisée dans `IMU_LANDSCAPE_AXIS` et `IMU_LANDSCAPE_SIGN` de
-`board_config.py` (hypothèse initiale : axe X le long du petit côté de la dalle).
-En cas d'inversion du montage sur une révision, ajuster ces deux constantes ; ne
-pas modifier les broches QSPI ni le pilote d'écran pour compenser.
+`status` expose aussi `orientation` et `imu` (capteur lisible). Mesures sur une
+carte v2 tenue debout, écran face à soi : **USB-C à gauche** donne Y ≈ +16 200,
+X ≈ −1 250 ; **USB-C à droite** donne Y ≈ −16 100, X ≈ +1 200 (1 g = 16 384).
+Le choix initial de X faisait donc réagir l'automatisme en portrait plutôt qu'en
+paysage. `IMU_LANDSCAPE_AXIS = 1` et `IMU_LANDSCAPE_SIGN = -1` correspondent à ces
+mesures. Les deux sens paysage doivent encore être validés visuellement après
+déploiement, ainsi que la position à plat et le redémarrage. Sur une autre révision,
+utiliser le diagnostic du [README Windows S3](../README-ESP32-S3-Windows.md)
+avant de changer ces constantes dans `board_config.py` ; ne pas modifier les
+broches QSPI ni le pilote d'écran pour compenser.
 
-**Portage experimental, pas encore valide sur le materiel reel.** Une compilation
-et des tests simules ne valident ni l'ecran, ni les couleurs, ni la rotation,
-ni les redemarrages. Aucun appareil n'est flashe par les tests.
+**Portage experimental.** L'axe de l'IMU a été mesuré sur une carte v2 ; cela
+ne valide pas encore le rendu, la rotation automatique après correction ni les
+redémarrages. Aucun appareil n'est flashé par les tests.
 
 ## Stockage sans microSD
 

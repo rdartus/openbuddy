@@ -47,6 +47,13 @@ ORIENTATIONS = {
 ORDER = ("portrait", "landscape", "portrait_inv", "landscape_inv")
 DEFAULT_ORIENTATION = "landscape"
 AUTO_ORIENTATION = False
+# Logical landscape canvas and UI geometry (the physical panel may be rotated).
+UI_WIDTH, UI_HEIGHT = 320, 172
+UI_PET_SCALE = 1
+UI_PET_STAGE = (8, 35, 104, 104)
+UI_TEXT_X, UI_LINK_X = 124, 224
+UI_HEADER_Y, UI_STATE_Y, UI_DETAIL_Y, UI_INFO_Y = 15, 55, 87, 113
+UI_DIVIDER_Y, UI_FOOTER_Y = 141, 153
 
 # Stock firmware defaults to C6; dedicated builds freeze their board identity.
 # A saved explicit profile always wins. The chip model cannot identify PCB wiring.
@@ -74,6 +81,13 @@ if BOARD_MODEL in ("waveshare-s3-amoled-164", "waveshare-s3-amoled-164-v2"):
     SD_SPI_ID = 2
     SD_SCLK, SD_MOSI, SD_MISO, SD_CS = 41, 39, 40, 38
     PANEL_SHORT, PANEL_LONG, RAM_SHORT_OFFSET = 280, 456, 20
+    # Fill the physical panel in landscape; keep the 96x104 pack unchanged.
+    UI_WIDTH, UI_HEIGHT = 456, 280
+    UI_PET_SCALE = 2
+    UI_PET_STAGE = (8, 36, 208, 208)
+    UI_TEXT_X, UI_LINK_X = 228, 344
+    UI_HEADER_Y, UI_STATE_Y, UI_DETAIL_Y, UI_INFO_Y = 24, 82, 132, 174
+    UI_DIVIDER_Y, UI_FOOTER_Y = 256, 264
     if BOARD_MODEL == "waveshare-s3-amoled-164-v2":
         # Waveshare's v2 schematic and both vendor examples use GPIO46, not 9.
         LCD_CS = 46
@@ -85,8 +99,9 @@ if BOARD_MODEL in ("waveshare-s3-amoled-164", "waveshare-s3-amoled-164-v2"):
         IMU_SDA, IMU_SCL = 47, 48
         IMU_I2C_FREQ = 300_000
         IMU_ADDRESS = 0x6B
-        # Sensor axis along the panel's short edge; validate its sign on hardware.
-        IMU_LANDSCAPE_AXIS = 0
-        IMU_LANDSCAPE_SIGN = 1
+        # Measured upright: USB-C left => Y positive; USB-C right => Y negative.
+        # Gravity on X instead corresponds to portrait and must not rotate the UI.
+        IMU_LANDSCAPE_AXIS = 1
+        IMU_LANDSCAPE_SIGN = -1
 elif BOARD_MODEL != "waveshare-c6-lcd-147":
     raise ValueError("Unknown OpenBuddy board profile: " + BOARD_MODEL)

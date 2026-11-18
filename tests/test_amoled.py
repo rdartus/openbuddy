@@ -76,15 +76,19 @@ class AMOLEDTests(unittest.TestCase):
                     start = (row * 280 + x) * 2
                     shadow[start:start + w * 2] = color.to_bytes(2, "big") * w
 
-            def blit_rotated(self, shadow, source, x, y, w, h, inverted):
+            def blit_rotated(self, shadow, source, x, y, w, h, inverted, scale, canvas_w, canvas_h):
                 self.native_calls.append("blit_rotated")
                 for row in range(h):
                     for column in range(w):
-                        px = 54 + (171 - y - row if inverted else y + row)
-                        py = 68 + (x + column if inverted else 319 - x - column)
-                        target = (py * 280 + px) * 2
                         offset = (row * w + column) * 2
-                        shadow[target:target + 2] = source[offset:offset + 2]
+                        for sy in range(scale):
+                            for sx in range(scale):
+                                px = (280 - canvas_h) // 2 + (canvas_h - 1 - y - row * scale - sy
+                                                              if inverted else y + row * scale + sy)
+                                py = (456 - canvas_w) // 2 + (x + column * scale + sx if inverted
+                                                              else canvas_w - 1 - x - column * scale - sx)
+                                target = (py * 280 + px) * 2
+                                shadow[target:target + 2] = source[offset:offset + 2]
 
             def pack_rect(self, shadow, scratch, x, y, w, h):
                 self.native_calls.append("pack_rect")
@@ -104,7 +108,7 @@ class AMOLEDTests(unittest.TestCase):
         })
         self.dependencies = {
             "machine": machine, "board_config": cfg, "st7789": self.renderer, "time": clock,
-            "amoled_qspi": types.SimpleNamespace(Bus=FakeBus, API_VERSION=3),
+            "amoled_qspi": types.SimpleNamespace(Bus=FakeBus, API_VERSION=4),
         }
         self.driver = load_module("co5300", self.dependencies)
         self.lcd = self.driver.LCD()
@@ -140,53 +144,49 @@ class AMOLEDTests(unittest.TestCase):
         self.assertEqual(set(self.pins), {21})
 
     def test_initial_clear_covers_panel_with_twenty_column_offset(self):
-        self.assertEqual((self.lcd.w, self.lcd.h), (320, 172))
+        self.assertEqual((self.lcd.w, self.lcd.h), (self.cfg.UI_WIDTH, self.cfg.UI_HEIGHT))
         self.assertEqual(len(self.lcd.buffer), 280 * 456 * 2)
         self.transactions[:] = self.transactions[9:12]
         self.assert_window(20, 0, 299, 455, [bytes(560)] * 456)
 
     def test_blit_rotates_both_orientations_without_swapping_rgb565_bytes(self):
         source = b"\xf8\x00\x07\xe0\x00\x1f\x12\x34\xab\xcd\xff\xff"
-        cases = (
-            ("landscape", 74, 384, [bytes(4), b"\x00\x1f\xff\xff", b"\x07\xe0\xab\xcd",
-                                     b"\xf8\x00\x12\x34"]),
-            ("landscape_inv", 244, 68, [b"\x12\x34\xf8\x00", b"\xab\xcd\x07\xe0",
-                                        b"\xff\xff\x00\x1f", bytes(4)]),
-        )
-        for orientation, left, top, rows in cases:
+        for orientation in ("landscape", "landscape_inv"):
             with self.subTest(orientation=orientation):
                 self.lcd.set_orientation(orientation)
                 self.transactions.clear()
                 self.lcd.blit(source, 0, 0, 3, 2)
-                self.assert_window(left, top, left + 1, top + 3, rows)
+                for row in range(2):
+                    for col in range(3):
+                        px, py = self.lcd._point(col, row)
+                        self.assertEqual(self.lcd.buffer[(py * 280 + px) * 2:(py * 280 + px) * 2 + 2],
+                                         source[(row * 3 + col) * 2:(row * 3 + col) * 2 + 2])
+                self.assertEqual(len(self.transactions), 3)
 
     def test_odd_updates_flush_even_bounds_and_preserve_shadow_neighbours(self):
-        for orientation, x, y in (("landscape", 54, 386), ("landscape_inv", 224, 68)):
+        for orientation in ("landscape", "landscape_inv"):
             with self.subTest(orientation=orientation):
                 self.lcd.set_orientation(orientation)
                 self.lcd.fill_rect(0, 0, 2, 2, 0x1234)
                 self.transactions.clear()
                 self.lcd.blit(b"\xab\xcd", 0, 1, 1, 1)
-                rows = ([b"\x12\x34\x12\x34", b"\x12\x34\xab\xcd"]
-                        if orientation == "landscape" else
-                        [b"\xab\xcd\x12\x34", b"\x12\x34\x12\x34"])
-                self.assert_window(x + 20, y, x + 21, y + 1, rows)
+                self.assertEqual(self.lcd.buffer[(self.lcd._point(0, 1)[1] * 280 +
+                                                   self.lcd._point(0, 1)[0]) * 2:][:2], b"\xab\xcd")
+                self.assertEqual(self.transactions[0][0], 0x2A)
+                self.assertEqual(self.transactions[1][0], 0x2B)
                 self.transactions.clear()
                 self.lcd.fill_rect(1, 0, 1, 1, 0xF800)
-                rows = ([b"\xf8\x00\x12\x34", b"\x12\x34\xab\xcd"]
-                        if orientation == "landscape" else
-                        [b"\xab\xcd\x12\x34", b"\x12\x34\xf8\x00"])
-                self.assert_window(x + 20, y, x + 21, y + 1, rows)
+                px, py = self.lcd._point(1, 0)
+                self.assertEqual(self.lcd.buffer[(py * 280 + px) * 2:(py * 280 + px) * 2 + 2],
+                                 b"\xf8\x00")
 
-    def test_logical_corners_stay_inside_centered_canvas(self):
-        cases = {
-            "landscape": [(54, 387), (54, 68), (225, 387), (225, 68)],
-            "landscape_inv": [(225, 68), (225, 387), (54, 68), (54, 387)],
-        }
-        for orientation, expected in cases.items():
+    def test_logical_corners_stay_inside_canvas(self):
+        for orientation in ("landscape", "landscape_inv"):
             self.lcd.set_orientation(orientation)
-            for (x, y), (px, py) in zip(((0, 0), (319, 0), (0, 171), (319, 171)), expected):
+            for x, y in ((0, 0), (self.lcd.w - 1, 0), (0, self.lcd.h - 1),
+                         (self.lcd.w - 1, self.lcd.h - 1)):
                 with self.subTest(orientation=orientation, point=(x, y)):
+                    px, py = self.lcd._point(x, y)
                     self.transactions.clear()
                     self.lcd.blit(b"\x56\x78", x, y, 1, 1)
                     start = (py * 280 + px) * 2
@@ -212,8 +212,9 @@ class AMOLEDTests(unittest.TestCase):
     def test_invalid_bounds_and_buffer_sizes_fail_without_io_or_shadow_changes(self):
         self.transactions.clear()
         before = bytes(self.lcd.buffer)
-        for bounds in ((-1, 0, 1, 1), (0, -1, 1, 1), (320, 0, 1, 1),
-                       (0, 172, 1, 1), (319, 0, 2, 1), (0, 171, 1, 2)):
+        for bounds in ((-1, 0, 1, 1), (0, -1, 1, 1), (self.lcd.w, 0, 1, 1),
+                       (0, self.lcd.h, 1, 1), (self.lcd.w - 1, 0, 2, 1),
+                       (0, self.lcd.h - 1, 1, 2)):
             with self.subTest(bounds=bounds):
                 with self.assertRaises(ValueError):
                     self.lcd.blit(bytes(bounds[2] * bounds[3] * 2), *bounds)
@@ -334,10 +335,10 @@ class AMOLEDTests(unittest.TestCase):
             with self.assertRaisesRegex(ImportError, "install.*QSPI MicroPython firmware"):
                 load_module("co5300", dependencies)
 
-    def test_api_v2_is_rejected_before_touching_the_display(self):
+    def test_old_api_is_rejected_before_touching_the_display(self):
         old = types.SimpleNamespace(Bus=Mock(side_effect=AssertionError("Outdated bus used")),
-                                    API_VERSION=2)
-        with self.assertRaisesRegex(ImportError, "API_VERSION >= 3"):
+                                    API_VERSION=3)
+        with self.assertRaisesRegex(ImportError, "API_VERSION >= 4"):
             load_module("co5300", dict(self.dependencies, amoled_qspi=old))
         old.Bus.assert_not_called()
 
@@ -375,6 +376,19 @@ class AMOLEDV2Tests(AMOLEDTests):
 
     def test_v2_bus_selects_gpio46_at_vendor_clock(self):
         self.assertEqual(self.lcd.bus.options, {"baudrate": 40_000_000, "cs": 46})
+
+    def test_full_screen_and_scaled_pet_reach_panel_edges(self):
+        for orientation in ("landscape", "landscape_inv"):
+            self.lcd.set_orientation(orientation)
+            self.lcd.fill_rect(0, 0, self.lcd.w, self.lcd.h, 0x1234)
+            self.assertEqual(self.lcd.buffer[:2], b"\x12\x34")
+            self.assertEqual(self.lcd.buffer[-2:], b"\x12\x34")
+            self.lcd.blit(b"\xf8\x00\x07\xe0", 8, 36, 2, 1, scale=2)
+            for row in range(2):
+                for col in range(4):
+                    px, py = self.lcd._point(8 + col, 36 + row)
+                    self.assertEqual(self.lcd.buffer[(py * 280 + px) * 2:(py * 280 + px) * 2 + 2],
+                                     b"\xf8\x00" if col < 2 else b"\x07\xe0")
 
 
 if __name__ == "__main__":

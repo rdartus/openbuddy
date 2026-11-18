@@ -2,7 +2,7 @@
 
 Keep the co5300 module name for persisted board profiles. The native bus owns
 the fixed QSPI pins and command framing; registers are single-lane, pixels quad.
-The 320x172 canvas is centred and rotated in software on the 280x456 panel.
+The profile's landscape canvas is rotated in native code on the 280x456 panel.
 """
 
 from machine import Pin
@@ -14,8 +14,8 @@ except ImportError:
     raise ImportError("AMOLED requires native amoled_qspi; install the OpenBuddy "
                        "ESP32-S3 QSPI MicroPython firmware (with octal PSRAM), "
                        "not stock MicroPython")
-if getattr(amoled_qspi, "API_VERSION", 0) < 3:
-    raise ImportError("AMOLED requires OpenBuddy QSPI firmware API_VERSION >= 3; "
+if getattr(amoled_qspi, "API_VERSION", 0) < 4:
+    raise ImportError("AMOLED requires OpenBuddy QSPI firmware API_VERSION >= 4; "
                       "reflash the matching firmware before deploying Python files")
 
 import board_config as cfg
@@ -76,7 +76,7 @@ class LCD(TextRenderer):
         if name not in ("landscape", "landscape_inv"):
             raise ValueError("AMOLED UI supports landscape orientations only")
         self.orientation = name
-        self.w, self.h = 320, 172
+        self.w, self.h = cfg.UI_WIDTH, cfg.UI_HEIGHT
         self.clear_all()
 
     def clear_all(self, color=0):
@@ -85,9 +85,11 @@ class LCD(TextRenderer):
         self._flush(0, 0, self.WIDTH, self.HEIGHT)
 
     def _point(self, x, y):
+        left = (self.WIDTH - self.h) // 2
+        top = (self.HEIGHT - self.w) // 2
         if self.orientation == "landscape":
-            return 54 + y, 68 + 319 - x
-        return 54 + 171 - y, 68 + x
+            return left + y, top + self.w - 1 - x
+        return left + self.h - 1 - y, top + x
 
     def _bounds(self, x, y, w, h):
         if w <= 0 or h <= 0:
@@ -118,14 +120,16 @@ class LCD(TextRenderer):
         # Every native write starts a new RAMWR, so rows must be contiguous.
         self.bus.write(0x2C, data, quad=True)
 
-    def blit(self, buf, x, y, w, h):
-        bounds = self._bounds(x, y, w, h)
+    def blit(self, buf, x, y, w, h, scale=1):
+        if scale not in (1, 2):
+            raise ValueError("Invalid RGB565 scale")
+        bounds = self._bounds(x, y, w * scale, h * scale)
         if bounds is None:
             return
         if len(buf) != w * h * 2:
             raise ValueError("Invalid RGB565 buffer length")
         self.bus.blit_rotated(self.buffer, buf, x, y, w, h,
-                              self.orientation == "landscape_inv")
+                              self.orientation == "landscape_inv", scale, self.w, self.h)
         self._flush(*bounds)
 
     def fill_rect(self, x, y, w, h, color):

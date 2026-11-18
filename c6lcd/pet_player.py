@@ -54,8 +54,10 @@ class PetPlayer:
             self.animations = manifest["animations"]
             self.states = manifest["states"]
             self.buffer = bytearray(self.frame_bytes)
-            self.x = 8 + (104 - self.width) // 2
-            self.y = 35 + (104 - self.height) // 2
+            stage_x, stage_y, stage_w, stage_h = cfg.UI_PET_STAGE
+            self.scale = cfg.UI_PET_SCALE
+            self.x = stage_x + (stage_w - self.width * self.scale) // 2
+            self.y = stage_y + (stage_h - self.height * self.scale) // 2
             self.available = True
             print("Pet ready:", self.pet_id, self.width, self.height, "RAM", self.frame_bytes)
         except (OSError, ValueError, TypeError, KeyError, MemoryError) as error:
@@ -124,7 +126,11 @@ class PetPlayer:
                 self.cached = True
                 self.next_due = time.ticks_add(now, self.animation["frame_ms"])
             started = time.ticks_us()
-            self.lcd.blit(self.buffer, self.x, self.y, self.width, self.height)
+            if self.scale == 1:
+                self.lcd.blit(self.buffer, self.x, self.y, self.width, self.height)
+            else:
+                self.lcd.blit(self.buffer, self.x, self.y, self.width, self.height,
+                              scale=self.scale)
             self.draw_us += time.ticks_diff(time.ticks_us(), started)
             self.draws += 1
             return True

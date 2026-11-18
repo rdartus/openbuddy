@@ -46,6 +46,8 @@ class BoardProfileTests(unittest.TestCase):
                          (1, 7, 6, 5, 4))
         self.assertEqual((cfg.RGB_LED, cfg.BOOT_BUTTON), (8, 9))
         self.assertEqual((cfg.PANEL_SHORT, cfg.PANEL_LONG, cfg.RAM_SHORT_OFFSET), (172, 320, 34))
+        self.assertEqual((cfg.UI_WIDTH, cfg.UI_HEIGHT, cfg.UI_PET_SCALE, cfg.UI_PET_STAGE),
+                         (320, 172, 1, (8, 35, 104, 104)))
 
     def test_explicit_s3_marker_selects_amoled_and_separate_sd_pins_without_led(self):
         cfg = self.profile("  waveshare-s3-amoled-164\n")
@@ -61,6 +63,8 @@ class BoardProfileTests(unittest.TestCase):
         self.assertIsNone(cfg.RGB_LED)
         self.assertEqual(cfg.BOOT_BUTTON, 0)
         self.assertEqual((cfg.PANEL_SHORT, cfg.PANEL_LONG, cfg.RAM_SHORT_OFFSET), (280, 456, 20))
+        self.assertEqual((cfg.UI_WIDTH, cfg.UI_HEIGHT, cfg.UI_PET_SCALE, cfg.UI_PET_STAGE),
+                         (456, 280, 2, (8, 36, 208, 208)))
 
     def test_explicit_c6_marker_and_unknown_profiles(self):
         cfg = self.profile("waveshare-c6-lcd-147\n")

@@ -9,5 +9,5 @@ Si le bon firmware natif v2 est déjà flashé :
 2. Reprendre à l’[étape 4 : déploiement et test écran](../README-ESP32-S3-Windows.md#4-déployer-openbuddy-et-tester-lécran).
 3. Continuer avec le pet en flash et le plugin, dans le même README.
 
-Un ancien build sans `amoled_qspi` API v3 exige d’abord le reflashage décrit dans
+Un ancien build sans `amoled_qspi` API v4 exige d’abord le reflashage décrit dans
 ce README. Un simple déploiement Python ne suffit pas.

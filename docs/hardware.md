@@ -15,8 +15,9 @@ ci-dessous ne changent pas : son firmware reste officiel.
 Attention aux revisions : **v2 = CS GPIO46**, ancien profil = GPIO9. Le build v2
 utilise la flash interne pour le pet, sans acces TF ni repli SD ; voir le guide S3.
 Sur la v2, le QMI8658 utilise SDA=47, SCL=48, adresse `0x6B` et choisit entre les
-deux sens paysage à 180° avec filtrage, sans mode portrait. Le sens physique de
-l'axe reste à valider sur carte ; le C6 n'est pas modifié.
+deux sens paysage à 180° avec filtrage, sans mode portrait. Mesures sur une carte
+v2 : la gravité est sur Y en paysage (positif avec USB-C à gauche, négatif à
+droite) ; le C6 n'est pas modifié.
 
 ## Carte principale
 

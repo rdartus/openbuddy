@@ -17,10 +17,6 @@
 #define QSPI_CS (9)
 #define PANEL_WIDTH (280)
 #define PANEL_HEIGHT (456)
-#define CANVAS_WIDTH (320)
-#define CANVAS_HEIGHT (172)
-#define CANVAS_X (54)
-#define CANVAS_Y (68)
 // Match the Waveshare v2 demo; leave SPI3 available for the separate SD bus.
 #define QSPI_HOST SPI2_HOST
 
@@ -276,7 +272,17 @@ static mp_obj_t amoled_qspi_blit_rotated(size_t n_args, const mp_obj_t *args) {
     mp_int_t y = mp_obj_get_int(args[4]);
     mp_int_t w = mp_obj_get_int(args[5]);
     mp_int_t h = mp_obj_get_int(args[6]);
-    amoled_qspi_check_rect(x, y, w, h, CANVAS_WIDTH, CANVAS_HEIGHT);
+    bool inverted = mp_obj_is_true(args[7]);
+    mp_int_t scale = mp_obj_get_int(args[8]);
+    mp_int_t canvas_w = mp_obj_get_int(args[9]);
+    mp_int_t canvas_h = mp_obj_get_int(args[10]);
+    if (scale < 1 || scale > 2 || canvas_w <= 0 || canvas_h <= 0 ||
+        canvas_h > PANEL_WIDTH || canvas_w > PANEL_HEIGHT ||
+        x < 0 || y < 0 || w <= 0 || h <= 0 ||
+        x >= canvas_w || y >= canvas_h ||
+        w > (canvas_w - x) / scale || h > (canvas_h - y) / scale) {
+        mp_raise_ValueError(MP_ERROR_TEXT("Invalid QSPI canvas rectangle"));
+    }
     if (source.len != (size_t)w * h * 2) {
         mp_raise_ValueError(MP_ERROR_TEXT("Invalid RGB565 source size"));
     }
@@ -286,22 +292,29 @@ static mp_obj_t amoled_qspi_blit_rotated(size_t n_args, const mp_obj_t *args) {
         (dst < src && src - dst < shadow.len)) {
         mp_raise_ValueError(MP_ERROR_TEXT("Overlapping RGB565 buffers"));
     }
-    bool inverted = mp_obj_is_true(args[7]);
+    int canvas_x = (PANEL_WIDTH - canvas_h) / 2;
+    int canvas_y = (PANEL_HEIGHT - canvas_w) / 2;
     const uint8_t *input = source.buf;
     uint8_t *pixels = shadow.buf;
     for (int row = 0; row < h; row++) {
-        int px = inverted ? CANVAS_X + CANVAS_HEIGHT - 1 - y - row : CANVAS_X + y + row;
         for (int col = 0; col < w; col++) {
-            int py = inverted ? CANVAS_Y + x + col : CANVAS_Y + CANVAS_WIDTH - 1 - x - col;
-            size_t target = ((size_t)py * PANEL_WIDTH + px) * 2;
             size_t source_pos = ((size_t)row * w + col) * 2;
-            pixels[target] = input[source_pos];
-            pixels[target + 1] = input[source_pos + 1];
+            for (int sy = 0; sy < scale; sy++) {
+                int logical_y = y + row * scale + sy;
+                int px = inverted ? canvas_x + canvas_h - 1 - logical_y : canvas_x + logical_y;
+                for (int sx = 0; sx < scale; sx++) {
+                    int logical_x = x + col * scale + sx;
+                    int py = inverted ? canvas_y + logical_x : canvas_y + canvas_w - 1 - logical_x;
+                    size_t target = ((size_t)py * PANEL_WIDTH + px) * 2;
+                    pixels[target] = input[source_pos];
+                    pixels[target + 1] = input[source_pos + 1];
+                }
+            }
         }
     }
     return mp_const_none;
 }
-static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(amoled_qspi_blit_rotated_obj, 8, 8, amoled_qspi_blit_rotated);
+static MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(amoled_qspi_blit_rotated_obj, 11, 11, amoled_qspi_blit_rotated);
 
 static mp_obj_t amoled_qspi_pack_rect(size_t n_args, const mp_obj_t *args) {
     amoled_qspi_check_open(args[0]);
@@ -364,7 +377,7 @@ static MP_DEFINE_CONST_OBJ_TYPE(amoled_qspi_bus_type, MP_QSTR_Bus, MP_TYPE_FLAG_
 static const mp_rom_map_elem_t amoled_qspi_globals_table[] = {
     { MP_ROM_QSTR(MP_QSTR___name__), MP_ROM_QSTR(MP_QSTR_amoled_qspi) },
     { MP_ROM_QSTR(MP_QSTR_Bus), MP_ROM_PTR(&amoled_qspi_bus_type) },
-    { MP_ROM_QSTR(MP_QSTR_API_VERSION), MP_ROM_INT(3) },
+    { MP_ROM_QSTR(MP_QSTR_API_VERSION), MP_ROM_INT(4) },
 };
 static MP_DEFINE_CONST_DICT(amoled_qspi_globals, amoled_qspi_globals_table);
 

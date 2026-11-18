@@ -92,24 +92,27 @@ class OrientationTests(unittest.TestCase):
         self.clock = Clock()
         self.module = load_module("buddy_orientation", {"board_config": self.cfg, "time": self.clock})
         self.sensor = Mock()
-        self.sensor.read.return_value = (-16384, 0, 0)
+        self.sensor.read.return_value = (0, 16384, 0)
         self.factory = Mock(return_value=self.sensor)
         self.auto = self.module.AutoOrientation(self.factory)
 
     def test_landscape_polarity_and_ignored_positions(self):
-        for sample, expected in (((-16384, 0, 0), "landscape"), ((16384, 0, 0), "landscape_inv")):
+        for sample, expected in (((0, 16384, 0), "landscape"), ((0, -16384, 0), "landscape_inv"),
+                                 ((-1240, 16145, -2059), "landscape"),
+                                 ((1232, -16047, -4340), "landscape_inv")):
             self.assertEqual(self.module.gravity_orientation(sample), expected)
         for sample in ((0, 0, 16384), (0, 0, -16384), (0, 0, 0), (30000, 0, 0),
-                       (11585, 11585, 0), (12000, 0, 12000), (1000, 500, 300),
-                       (-32768, 0, 0), (0, -16384, 0), (0, 16384, 0)):
+                        (11585, 11585, 0), (12000, 0, 12000), (1000, 500, 300),
+                        (-32768, 0, 0), (-16384, 0, 0), (16384, 0, 0),
+                        (16145, -1240, -2059)):
             with self.subTest(sample=sample):
                 self.assertIsNone(self.module.gravity_orientation(sample))
 
     def test_mounting_axis_and_sign_are_configurable(self):
-        self.cfg.IMU_LANDSCAPE_AXIS, self.cfg.IMU_LANDSCAPE_SIGN = 1, -1
-        self.assertEqual(self.module.gravity_orientation((0, 16384, 0)), "landscape")
-        self.assertEqual(self.module.gravity_orientation((0, -16384, 0)), "landscape_inv")
-        self.assertIsNone(self.module.gravity_orientation((16384, 0, 0)))
+        self.cfg.IMU_LANDSCAPE_AXIS, self.cfg.IMU_LANDSCAPE_SIGN = 0, 1
+        self.assertEqual(self.module.gravity_orientation((-16384, 0, 0)), "landscape")
+        self.assertEqual(self.module.gravity_orientation((16384, 0, 0)), "landscape_inv")
+        self.assertIsNone(self.module.gravity_orientation((0, 16384, 0)))
 
     def test_nonblocking_poll_rate_and_half_second_stability(self):
         for now in range(500):
@@ -121,14 +124,14 @@ class OrientationTests(unittest.TestCase):
         self.assertTrue(self.auto.available)
 
     def test_flat_stale_or_changed_sample_cancels_pending_rotation(self):
-        for interruption in (None, (0, 0, 16384), (0, -16384, 0)):
+        for interruption in (None, (0, 0, 16384), (-16384, 0, 0)):
             with self.subTest(interruption=interruption):
                 auto = self.module.AutoOrientation(self.factory)
-                self.sensor.read.return_value = (-16384, 0, 0)
+                self.sensor.read.return_value = (0, 16384, 0)
                 auto.poll(0, "landscape_inv")
                 self.sensor.read.return_value = interruption
                 auto.poll(400, "landscape_inv")
-                self.sensor.read.return_value = (-16384, 0, 0)
+                self.sensor.read.return_value = (0, 16384, 0)
                 self.assertIsNone(auto.poll(500, "landscape_inv"))
                 self.assertIsNone(auto.poll(900, "landscape_inv"))
                 self.assertEqual(auto.poll(1000, "landscape_inv"), "landscape")
@@ -162,7 +165,7 @@ class OrientationTests(unittest.TestCase):
         self.auto.flip()
         for now in range(100, 1000, 100):
             self.assertIsNone(self.auto.poll(now, "landscape_inv"))
-        self.sensor.read.return_value = (16384, 0, 0)
+        self.sensor.read.return_value = (0, -16384, 0)
         self.auto.poll(1000, "landscape_inv")
         self.assertEqual(self.auto.poll(1500, "landscape_inv"), "landscape")
 
@@ -182,7 +185,7 @@ class CompanionOrientationTests(unittest.TestCase):
         lcd = Mock(orientation="landscape")
         lcd.set_orientation.side_effect = lambda name: setattr(lcd, "orientation", name)
         sensor = Mock()
-        sensor.read.return_value = (16384, 0, 0)
+        sensor.read.return_value = (0, -16384, 0)
         factory = Mock(side_effect=OSError("No IMU")) if sensor_missing else Mock(return_value=sensor)
         orientation_module = load_module("buddy_orientation", {"board_config": cfg, "time": clock})
         auto_constructor = Mock(side_effect=lambda: orientation_module.AutoOrientation(factory))

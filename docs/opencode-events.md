@@ -6,9 +6,9 @@
 OpenCode v2, service local géré
   → plugin openbuddy.events (abonnement aux événements)
   → HTTP 127.0.0.1, authentifié par un jeton local
-  → pont Python/Bleak
-  → Bluetooth LE GATT
-  → état + animation Goku + halo
+  → pont Python (USB série ou Bluetooth LE GATT)
+  → ESP32 C6 LCD ou S3 AMOLED
+  → état + animation Goku + halo RVB sur C6
 ```
 
 Le plugin est installé **globalement sur ce PC** dans
@@ -262,7 +262,7 @@ nécessaires pour l'utiliser**.
 
 Utiliser de préférence le ZIP. Pour une copie manuelle depuis le dépôt, prendre
 `integration/openbuddy/dist/` (`index.js`, `package.json`, `LICENSES.txt`), `pc/`
-et `c6lcd/buddy_protocol.py`, puis installer `pc/requirements.txt` et appairer la carte.
+et `device/buddy_protocol.py`, puis installer `pc/requirements.txt` et appairer la carte.
 
 Les restrictions Bluetooth/GATT et d'exécution du poste d'entreprise restent
 applicables. La connexion comme clavier ne les contourne pas.

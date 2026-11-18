@@ -25,14 +25,14 @@ FILES = {
     "pc/toasts.py": "pc/toasts.py",
     "pc/quota.py": "pc/quota.py",
     "pc/install_plugin.py": "pc/install_plugin.py",
-    "c6lcd/buddy_protocol.py": "c6lcd/buddy_protocol.py",
+    "device/buddy_protocol.py": "device/buddy_protocol.py",
     "plugin/openbuddy/index.js": "integration/openbuddy/dist/index.js",
     "plugin/openbuddy/package.json": "integration/openbuddy/dist/package.json",
     "plugin/openbuddy/LICENSES.txt": "integration/openbuddy/dist/LICENSES.txt",
     "docs/opencode-events.md": "docs/opencode-events.md",
 }
 # Must stay identical to pc.deploy.FILES (checked by the tests).
-FIRMWARE_FILES = ("board_config.py", "shared_spi.py", "sdcard_spi.py", "storage.py",
+FIRMWARE_FILES = ("pet_format.py", "board_config.py", "shared_spi.py", "sdcard_spi.py", "storage.py",
                   "st7789.py", "co5300.py", "buddy_protocol.py", "buddy_ble.py", "buddy_usb.py",
                   "pet_player.py", "buddy_ui.py", "buddy_orientation.py", "qmi8658.py",
                   "companion.py", "orientation_demo.py",
@@ -59,7 +59,7 @@ def files_for(variant):
         for name in ("openbuddy-usb.cmd", "openbuddy-usb-stop.cmd"):
             files["tools/" + name] = "tools/" + name
         for name in FIRMWARE_FILES:
-            files["c6lcd/" + name] = "c6lcd/" + name
+            files["device/" + name] = "device/" + name
     return files
 
 

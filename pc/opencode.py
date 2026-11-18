@@ -18,7 +18,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 from bleak import BleakClient
 from bleak.exc import BleakError
 
-from c6lcd.buddy_protocol import SERVICE_UUID, STATES, TX_UUID
+from device.buddy_protocol import SERVICE_UUID, STATES, TX_UUID
 from pc.buddy import Link, UsbLink, find_device, find_serial_port
 from pc.notifications import SOUND_ALIASES, SoundNotifier
 from pc.quota import QuotaMonitor

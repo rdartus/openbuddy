@@ -1,6 +1,6 @@
 import unittest
 
-from c6lcd.buddy_protocol import MAX_FRAME, Decoder, encode, validate_command
+from device.buddy_protocol import MAX_FRAME, Decoder, encode, validate_command
 
 
 class ProtocolTests(unittest.TestCase):

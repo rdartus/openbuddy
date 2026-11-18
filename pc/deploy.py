@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 
-FILES = ("board_config.py", "shared_spi.py", "sdcard_spi.py", "storage.py",
+FILES = ("pet_format.py", "board_config.py", "shared_spi.py", "sdcard_spi.py", "storage.py",
          "st7789.py", "co5300.py", "buddy_protocol.py", "buddy_ble.py", "buddy_usb.py", "pet_player.py",
          "buddy_ui.py", "buddy_orientation.py", "qmi8658.py", "companion.py", "orientation_demo.py", "main.py")
 PREFLIGHT_TIMEOUT = 30
@@ -24,7 +24,7 @@ def main():
     args = parser.parse_args()
     if args.timeout <= 0:
         parser.error("--timeout must be positive")
-    root = Path(__file__).resolve().parents[1] / "c6lcd"
+    root = Path(__file__).resolve().parents[1] / "device"
     command = [sys.executable, "-u", "-m", "mpremote", "connect", args.port]
     for index, name in enumerate(FILES):
         if index:

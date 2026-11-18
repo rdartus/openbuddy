@@ -21,12 +21,12 @@ SUPPORT_FILES = {
     "docs/windows-uv-apres-flash.md", "THIRD_PARTY.md",
 }
 NATIVE_FILES = {
-    "native/amoled_qspi/amoled_qspi.c",
-    "native/amoled_qspi/micropython.cmake",
+    "firmware/amoled_qspi/amoled_qspi.c",
+    "firmware/amoled_qspi/micropython.cmake",
 }
-NATIVE_FILES |= {"native/boards/OPENBUDDY_S3_AMOLED_V2/" + name for name in (
+NATIVE_FILES |= {"firmware/boards/OPENBUDDY_S3_AMOLED_V2/" + name for name in (
     "mpconfigboard.cmake", "mpconfigboard.h", "sdkconfig.board", "manifest.py", "openbuddy_build.py")}
-SOURCE_FILES = {"c6lcd/" + name for name in DEPLOY_FILES} | SUPPORT_FILES | NATIVE_FILES
+SOURCE_FILES = {"device/" + name for name in DEPLOY_FILES} | SUPPORT_FILES | NATIVE_FILES
 LICENSES = {
     "licenses/MicroPython-LICENSE.txt": b"MicroPython license fixture\n",
     "licenses/ESP-IDF-LICENSE.txt": b"ESP-IDF license fixture\n",
@@ -37,9 +37,18 @@ LINK_MAP = ("usermod/amoled_qspi.c.obj\n"
 
 
 class S3USBBoardTests(unittest.TestCase):
+    def test_release_artifacts_do_not_overlap_firmware_sources(self):
+        workflow = (packager.ROOT / ".github/workflows/s3-qspi.yml").read_text(encoding="utf-8")
+        self.assertIn("- 'device/**'", workflow)
+        self.assertIn("- 'firmware/**'", workflow)
+        self.assertIn("path: dist/s3-qspi", workflow)
+        self.assertIn('gh release create "$TAG" dist/s3-qspi/*', workflow)
+        self.assertNotIn('gh release create "$TAG" device/*', workflow)
+        self.assertNotIn('gh release create "$TAG" firmware/*', workflow)
+
     @unittest.skipUnless(shutil.which("cc"), "A host C preprocessor is not available")
     def test_board_explicitly_keeps_the_hardware_usb_serial_jtag_phy(self):
-        header = packager.ROOT / "native/boards/OPENBUDDY_S3_AMOLED_V2/mpconfigboard.h"
+        header = packager.ROOT / "firmware/boards/OPENBUDDY_S3_AMOLED_V2/mpconfigboard.h"
         probe = """
 #if !defined(MICROPY_HW_ENABLE_USBDEV) || !defined(MICROPY_HW_USB_CDC) || !defined(MICROPY_HW_ESP_USB_SERIAL_JTAG)
 #error USB backend must not depend on upstream defaults
@@ -136,8 +145,8 @@ class S3FirmwarePackageTests(unittest.TestCase):
             names = archive.namelist()
             self.assertEqual(set(names), SOURCE_FILES | set(LICENSES) | {"BUILD.json"})
             self.assertEqual(len(names), len(set(names)))
-            self.assertEqual({name for name in names if name.startswith("c6lcd/")},
-                             {"c6lcd/" + name for name in DEPLOY_FILES})
+            self.assertEqual({name for name in names if name.startswith("device/")},
+                             {"device/" + name for name in DEPLOY_FILES})
             self.assertEqual(archive.read("BUILD.json"), manifest_bytes)
             for name in SOURCE_FILES:
                 with self.subTest(source=name):
@@ -170,17 +179,17 @@ class S3FirmwarePackageTests(unittest.TestCase):
         self.root = self.temporary / "sources"
         excluded = {
             ".env", ".env.local", "bridge.json", "openbuddy-bonds.json",
-            "c6lcd/openbuddy-bonds.json", "c6lcd/openbuddy-bonds.json.tmp",
-            "c6lcd/extra.py", "c6lcd/__pycache__/main.cpython-313.pyc",
+            "device/openbuddy-bonds.json", "device/openbuddy-bonds.json.tmp",
+            "device/extra.py", "device/__pycache__/main.cpython-313.pyc",
             "pc/bridge.json", "pc/__pycache__/deploy.cpython-313.pyc",
             "docs/hardware-notes.md", "docs/unrelated.md", "docs/media/pet.png",
             "tools/assets/font_petme128_8x8.h", "assets/pet.png",
             "build/pets/example/idle.rgb565", "build/pets/example/manifest.json",
             ".cache/pet.png", ".venv/token", "node_modules/package/index.js",
-            "native/amoled_qspi/__pycache__/cache.pyc",
-            "native/amoled_qspi/build/amoled_qspi.c.obj",
-            "native/amoled_qspi/.env", "native/amoled_qspi/private.key",
-            "native/amoled_qspi/amoled_qspi.o",
+            "firmware/amoled_qspi/__pycache__/cache.pyc",
+            "firmware/amoled_qspi/build/amoled_qspi.c.obj",
+            "firmware/amoled_qspi/.env", "firmware/amoled_qspi/private.key",
+            "firmware/amoled_qspi/amoled_qspi.o",
         }
         for name in SOURCE_FILES | excluded:
             path = self.root / name
@@ -192,7 +201,7 @@ class S3FirmwarePackageTests(unittest.TestCase):
             self.assertTrue(excluded.isdisjoint(archive.namelist()))
 
     def test_modified_tracked_files_mark_package_dirty(self):
-        self.dirty = " M c6lcd/co5300.py"
+        self.dirty = " M device/co5300.py"
         self.check_package()
 
     def test_untracked_files_mark_package_dirty(self):
@@ -217,7 +226,7 @@ class S3FirmwarePackageTests(unittest.TestCase):
         self.assertEqual(budget["pack_copies"], 2)
         self.assertEqual(budget["reserve_bytes"], 256 * 1024)
         self.assertEqual(budget["python_bytes"], sum(
-            (self.root / "c6lcd" / name).stat().st_size for name in DEPLOY_FILES))
+            (self.root / "device" / name).stat().st_size for name in DEPLOY_FILES))
         self.assertGreater(budget["python_budget_bytes"], budget["python_bytes"])
         self.assertEqual(budget["required_vfs_bytes"],
                          budget["python_budget_bytes"] + 2 * budget["pet_budget_bytes"] + 256 * 1024)
@@ -250,7 +259,7 @@ class S3FirmwarePackageTests(unittest.TestCase):
         original_stat = Path.stat
 
         def huge_sources(path, *args, **kwargs):
-            if path.parent == self.root / "c6lcd":
+            if path.parent == self.root / "device":
                 from types import SimpleNamespace
                 return SimpleNamespace(st_size=1024 * 1024)
             return original_stat(path, *args, **kwargs)

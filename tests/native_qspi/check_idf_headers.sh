@@ -19,4 +19,4 @@ done
     -I"$MICROPYTHON/ports/unix/variants/minimal" -I"$MICROPYTHON/ports/unix/$BUILD" \
     -I"$IDF_PATH/components/soc/esp32s3/include" \
     -I"$IDF_PATH/components/hal/esp32s3/include" \
-    "$@" "$ROOT/native/amoled_qspi/amoled_qspi.c"
+    "$@" "$ROOT/firmware/amoled_qspi/amoled_qspi.c"

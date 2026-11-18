@@ -7,7 +7,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 
-FIRMWARE = Path(__file__).resolve().parents[1] / "c6lcd"
+FIRMWARE = Path(__file__).resolve().parents[1] / "device"
 
 
 def load_module(name, dependencies=None, directory=FIRMWARE, **overrides):
@@ -389,6 +389,19 @@ class AMOLEDV2Tests(AMOLEDTests):
                     px, py = self.lcd._point(8 + col, 36 + row)
                     self.assertEqual(self.lcd.buffer[(py * 280 + px) * 2:(py * 280 + px) * 2 + 2],
                                      b"\xf8\x00" if col < 2 else b"\x07\xe0")
+
+    def test_both_landscape_bars_reach_physical_panel_edges(self):
+        for orientation in ("landscape", "landscape_inv"):
+            with self.subTest(orientation=orientation):
+                self.lcd.set_orientation(orientation)
+                self.lcd.fill_rect(0, 0, self.lcd.w, 3, 0xF800)
+                self.lcd.fill_rect(0, self.cfg.UI_DIVIDER_Y, self.lcd.w, 1, 0x07E0)
+                for x in (0, self.lcd.w - 1):
+                    for y, expected in ((0, b"\xf8\x00"),
+                                        (self.cfg.UI_DIVIDER_Y, b"\x07\xe0")):
+                        px, py = self.lcd._point(x, y)
+                        self.assertEqual(self.lcd.buffer[(py * self.lcd.WIDTH + px) * 2:][:2],
+                                         expected)
 
 
 if __name__ == "__main__":

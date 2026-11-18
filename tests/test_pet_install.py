@@ -406,6 +406,11 @@ class InstallerTests(unittest.TestCase):
         with patch.object(sys, "argv", ["pet", "convert"]), patch.object(pet, "convert_command") as convert:
             pet.main()
         self.assertEqual(convert.call_args.args[0].pet, pet.DEFAULT_PET)
+        self.assertEqual(convert.call_args.args[0].background, "black")
+        with patch.object(sys, "argv", ["pet", "convert", "--background", "black"]), \
+                patch.object(pet, "convert_command") as convert:
+            pet.main()
+        self.assertEqual(convert.call_args.args[0].background, "black")
 
 
 if __name__ == "__main__":

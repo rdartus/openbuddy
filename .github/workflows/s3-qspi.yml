@@ -6,8 +6,8 @@ on:
     paths:
       - '.github/workflows/s3-qspi.yml'
       - 'README-ESP32-S3-Windows.md'
-      - 'native/**'
-      - 'c6lcd/**'
+      - 'firmware/**'
+      - 'device/**'
       - 'pc/**'
       - 'tests/**'
       - 'tools/**'
@@ -22,8 +22,8 @@ on:
     paths:
       - '.github/workflows/s3-qspi.yml'
       - 'README-ESP32-S3-Windows.md'
-      - 'native/**'
-      - 'c6lcd/**'
+      - 'firmware/**'
+      - 'device/**'
       - 'pc/**'
       - 'tests/**'
       - 'tools/**'
@@ -125,7 +125,7 @@ jobs:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: openbuddy-s3-amoled-qspi
-          path: firmware
+          path: dist/s3-qspi
       - name: Publish experimental prerelease
         env:
           GH_TOKEN: ${{ github.token }}
@@ -133,6 +133,6 @@ jobs:
           TAG: ${{ github.ref_name }}
           COMMIT: ${{ github.sha }}
         run: |
-          gh release create "$TAG" firmware/* --verify-tag --target "$COMMIT" --prerelease \
+          gh release create "$TAG" dist/s3-qspi/* --verify-tag --target "$COMMIT" --prerelease \
             --title "S3 AMOLED v2 QSPI $TAG (experimental)" \
-            --notes "Waveshare S3 Touch AMOLED 1.64 v2 (CS GPIO46), 16 MiB flash, octal PSRAM. Experimental MicroPython 1.29.0 / ESP-IDF 5.5.2 with native QSPI API v3 and QMI8658 auto orientation. Pet storage is internal flash only; install artwork separately via pc.pet. BUILD.json includes checked application/VFS budgets. Hardware validation required. Download the matching source ZIP and follow its Windows uv instructions. No pet artwork is included."
+            --notes "Waveshare S3 Touch AMOLED 1.64 v2 (CS GPIO46), 16 MiB flash, octal PSRAM. Experimental MicroPython 1.29.0 / ESP-IDF 5.5.2 with native QSPI API v4 and QMI8658 auto orientation. Pet storage is internal flash only; install artwork separately via pc.pet. BUILD.json includes checked application/VFS budgets. Hardware validation required. Download the matching source ZIP and follow its Windows uv instructions. No pet artwork is included."

@@ -9,7 +9,7 @@ import types
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "c6lcd"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "device"))
 firmware = importlib.import_module("buddy_usb")
 
 

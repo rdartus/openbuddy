@@ -1,5 +1,21 @@
 # Matériel OpenBuddy
 
+Le code MicroPython commun aux deux cartes est dans `device/` ; `board_config.py`
+choisit le matériel par profil persistant ou, sur le build S3 dédié, par identité
+figée. `pet_format.py` définit le fond noir et la taille de l'image du pack,
+communs au C6 et au S3 ; seule la mise à l'échelle et le stockage changent.
+`pc.deploy` installe ces modules à la racine de l'ESP32 : aucun dossier
+`device/` n'est créé sur la carte. `firmware/` regroupe le module C QSPI et
+la carte de compilation du S3 ; le `.bin` produit est dans `dist/s3-qspi/`.
+
+| Carte | Profil | Affichage et stockage du pet |
+|---|---|---|
+| ESP32-C6-LCD-1.47 | `waveshare-c6-lcd-147` | ST7789 320×172, microSD |
+| ESP32-S3-Touch-AMOLED-1.64 v2 | `waveshare-s3-amoled-164-v2` | QSPI 456×280, flash interne |
+
+L'ancien profil S3 `waveshare-s3-amoled-164` reste disponible pour la révision
+GPIO9 ; il ne détecte pas automatiquement le câblage de la v2 (GPIO46).
+
 La Waveshare **ESP32-S3-Touch-AMOLED-1.64 v2** dispose aussi d'un profil dedie,
 d'un pilote Python `co5300` et du stockage des animations en flash interne.
 Elle exige un firmware MicroPython personnalise avec **`amoled_qspi` natif** :
@@ -19,7 +35,7 @@ deux sens paysage à 180° avec filtrage, sans mode portrait. Mesures sur une ca
 v2 : la gravité est sur Y en paysage (positif avec USB-C à gauche, négatif à
 droite) ; le C6 n'est pas modifié.
 
-## Carte principale
+## ESP32-C6-LCD-1.47
 
 **Waveshare ESP32-C6-LCD-1.47, version non tactile**, écran ST7789 172×320,
 LED RVB WS2812 et emplacement microSD. Ne pas confondre avec la variante Touch.

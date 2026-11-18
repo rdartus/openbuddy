@@ -1,8 +1,9 @@
 # OpenBuddy
 
-**L'activité d'OpenCode, visible en un coup d'œil.** Un compagnon physique sur
-**Waveshare ESP32-C6-LCD-1.47** : écran paysage 320×172, pet animé et halo RVB,
-synchronisés en **Local USB** ou en **Bluetooth**.
+**L'activité d'OpenCode, visible en un coup d'œil.** Un compagnon physique pour
+deux cartes ESP32 Waveshare : **C6-LCD-1.47** (écran paysage 320×172, halo RVB)
+et **S3-Touch-AMOLED-1.64 v2** (écran paysage 456×280). Le pet animé et l'état
+sont synchronisés en **Local USB** ou en **Bluetooth**.
 
 Portage **Waveshare ESP32-S3-Touch-AMOLED-1.64 v2 (280x456, CS GPIO46, 16 Mo flash,
 8 Mo PSRAM)** : pet **en flash interne, sans microSD ni repli TF**, avec un firmware
@@ -28,7 +29,8 @@ OpenCode v2 → plugin d'événements → pont Python local → Local USB ou Blu
 
 Le plugin écoute les **événements OpenCode v2**, suit les sessions et les demandes
 en attente, puis transmet un état au pont Python. Le pont envoie cet état au buddy ;
-le firmware choisit l'écran, la couleur du halo et l'animation lue sur microSD.
+le firmware choisit l'écran, l'accent coloré (halo RVB sur C6) et l'animation
+lue sur microSD C6 ou flash interne S3.
 Les images ne sont pas envoyées en continu par le transport.
 
 | Dans OpenCode | Sur OpenBuddy |
@@ -59,7 +61,7 @@ automatiquement : les réponses restent dans OpenCode.
 | Connexion | Câble USB-C **de données**, port série | Bluetooth LE : service GATT OpenBuddy + clavier HID |
 | Démarrage du pont | `--serial auto` ou `--serial COMx` | Sans option de transport |
 | Appairage | Aucun | BOOT long, vérification du code, puis **deuxième appui court** |
-| Écran, pet et halo | Identiques | Identiques |
+| Écran et pet (halo RVB sur C6) | Identiques pour une même carte | Identiques pour une même carte |
 | Boutons et clavier | Pas de remontée des boutons ni de HID sur ce transport | BOOT sert à l'appairage (appui long, puis confirmation du code) ; pas d'événement bouton ni de F13 |
 
 Le mode USB requiert le **firmware 0.3.0** ou plus (0.4.0 pour le quota). Le firmware conserve aussi le BLE :
@@ -76,7 +78,7 @@ pas MicroPython : il faut donc préparer la carte une première fois.
 | Carte | Firmware requis | Profil `pc.deploy --board` |
 |---|---|---|
 | Waveshare ESP32-C6-LCD-1.47 non tactile | MicroPython officiel `ESP32_GENERIC_C6` 1.29.0 | `waveshare-c6-lcd-147` |
-| Waveshare ESP32-S3-Touch-AMOLED-1.64 **v2** | Build OpenBuddy MicroPython 1.29.0 + `amoled_qspi` API v2, `OPENBUDDY_S3_AMOLED_V2`, PSRAM octale ([guide](docs/s3-qspi-build.md)) | `waveshare-s3-amoled-164-v2` |
+| Waveshare ESP32-S3-Touch-AMOLED-1.64 **v2** | Build OpenBuddy MicroPython 1.29.0 + `amoled_qspi` API v4, `OPENBUDDY_S3_AMOLED_V2`, PSRAM octale ([guide](docs/s3-qspi-build.md)) | `waveshare-s3-amoled-164-v2` |
 
 L'ancien profil `waveshare-s3-amoled-164` reste disponible pour la revision CS=GPIO9 ;
 ne pas le choisir pour la v2. Le build GitHub cible desormais explicitement la v2.
@@ -271,17 +273,27 @@ Un kit existant n'est remplacé qu'avec `--replace`.
 
 ## Fichiers
 
+`device/` regroupe l'application MicroPython commune ; **le dossier du dépôt
+n'est pas reproduit sur l'ESP32** : `pc.deploy` copie les modules directement
+à la racine du système de fichiers de la carte. Le profil de `board_config.py`
+sélectionne l'écran, les broches, l'orientation et le stockage. Le C6 utilise
+MicroPython officiel ; `firmware/` contient le module C et la carte de build
+du firmware S3 v2. Le `.bin` compilé est livré séparément dans `dist/s3-qspi/`.
+
 | Chemin | Rôle |
 |---|---|
-| `c6lcd/board_config.py` | Broches et géométrie, source unique |
-| `c6lcd/main.py`, `companion.py` | Démarrage et boucle firmware |
-| `c6lcd/buddy_ble.py` | HID, GATT, appairage et clés |
-| `c6lcd/buddy_usb.py` | Protocole d'états sur le port série USB |
-| `c6lcd/buddy_ui.py` | Écran 320×172 et halo |
-| `c6lcd/buddy_protocol.py` | Protocole partagé PC / ESP32 |
-| `c6lcd/shared_spi.py`, `sdcard_spi.py`, `storage.py` | Bus partagé et SD en lecture seule |
-| `c6lcd/pet_player.py` | Lecteur RGB565, une image en RAM |
-| `c6lcd/orientation_demo.py` | Ancienne démo conservée |
+| `device/board_config.py` | Broches et géométrie, source unique |
+| `device/pet_format.py` | Fond noir et format du pack partagés entre PC, C6 et S3 |
+| `device/main.py`, `companion.py` | Démarrage et boucle firmware |
+| `device/buddy_ble.py` | HID, GATT, appairage et clés |
+| `device/buddy_usb.py` | Protocole d'états sur le port série USB |
+| `device/st7789.py`, `co5300.py` | Pilotes écran C6 et S3 (QSPI natif) |
+| `device/buddy_ui.py` | Interface 320×172 C6 / 456×280 S3 ; halo RVB C6 |
+| `device/buddy_protocol.py` | Protocole partagé PC / ESP32 |
+| `device/shared_spi.py`, `sdcard_spi.py`, `storage.py` | Bus partagé et SD en lecture seule |
+| `device/pet_player.py` | Lecteur RGB565, une image en RAM |
+| `device/orientation_demo.py` | Ancienne démo conservée |
+| `firmware/amoled_qspi/`, `firmware/boards/` | Module C et configuration du firmware S3 |
 | `pc/buddy.py` | Diagnostic BLE et USB en Python |
 | `pc/opencode.py` | Pont événements locaux → BLE/USB, authentifié et en lecture seule |
 | `pc/notifications.py` | Sons système Windows non bloquants |
@@ -315,10 +327,11 @@ Le [guide QSPI](docs/s3-qspi-build.md#compilation-linux-sans-docker) centralise
 la compilation Linux et les tests C sur hote. Ni ces tests ni les tests Python
 simules ne valident l'affichage reel.
 
-Pour régénérer le visuel du README depuis un pack déjà converti localement :
+Pour régénérer le visuel du README depuis un pack déjà converti localement sur
+fond noir (les anciens packs à fond sombre ne correspondent plus au firmware) :
 
 ```powershell
-uv run python tools/build_readme_demo.py --pet-dir build/pets/super-saiyan-goku-combat
+uv run python tools/build_readme_demo.py --pet-dir build/pets/super-saiyan-goku-combat-black
 ```
 
 Le générateur utilise `BuddyUI`, `PetPlayer` et la police du firmware ; il ne se

@@ -146,6 +146,8 @@ installé à l'étape 5, le pet est agrandi en ×2 sans nouvelle conversion du p
 La petite interface 320 × 172 ne doit plus rester au milieu de l'écran :
 les dispositions sont choisies par le profil dans
 `board_config.py`.
+Sur S3 comme sur C6, la barre colorée supérieure **et le séparateur horizontal
+inférieur** s'étendent d'un bord à l'autre en paysage.
 **Si l’écran reste noir ou affiche mal les couleurs, arrêter ici et conserver
 la sortie du terminal.** Ne pas installer le pet ni multiplier les effacements.
 
@@ -189,9 +191,25 @@ Uniquement après un test écran réussi :
 
 ```powershell
 uv run python -m pc.pet convert
-uv run python -m pc.pet install build/pets/super-saiyan-goku-combat --port $Port --storage internal
+uv run python -m pc.pet install build/pets/super-saiyan-goku-combat-black --port $Port --storage internal
 uv run python -m pc.buddy --serial $Port status
 ```
+
+Le pack noir `build/pets/super-saiyan-goku-combat-black` est **le même pour C6
+et S3** : les zones transparentes et les bords semi-transparents sont composités
+sur le fond RGB `(0,0,0)` dès la conversion. Seuls son agrandissement à l'écran
+et sa destination (`--storage internal` sur S3, microSD sur C6) changent. Les
+anciens packs à fond `(8,12,20)` sont refusés sur les **deux** profils afin
+d'éviter un rectangle visible autour du pet.
+Un ancien pack déjà installé doit être remplacé explicitement en ajoutant
+`--replace` à la commande `install` ci-dessus ; garder tout ancien pack local intact.
+Si le dossier noir existe déjà, le réutiliser sans relancer `convert`, ou utiliser
+`--force` pour le reconvertir volontairement. Un pack noir déjà créé avec un autre
+nom de dossier reste compatible : donner son chemin à `install`, sans le recopier.
+Le changement de fond sur un firmware déjà en **API v4** ne demande **pas de
+nouveau `.bin`** : lors
+d'une mise à jour, après installation du pack noir, redéployer les fichiers
+Python de l'étape 4.
 
 Résultat attendu : **`"assets": "internal"`**, **`"sd": false`** et un identifiant
 dans `"pet"`. Le pet n’est pas inclus dans le `.bin` : cette étape le copie en flash
@@ -242,9 +260,8 @@ flash ; le `reset` relance le compagnon. Répéter pour l'autre sens et relancer
 ensuite le pont (étape 6). Le signe de l'axe mesuré peut varier sur une autre
 révision : ne pas le supposer d'après le nom du capteur.
 
-Si la conversion existe déjà, la conserver ; utiliser `convert --force` seulement
-pour la refaire. Si le pack est déjà sur la carte, le conserver ou ajouter
-**`--replace`** à la commande `install` pour le remplacer.
+Si un ancien pack existe sur la carte, suivre les consignes de remplacement de
+l'étape 5 plutôt que de conserver son ancien fond sombre.
 
 ## 6. Installer le plugin et lancer OpenBuddy
 

@@ -71,7 +71,7 @@ class PetPlayer:
         if (type(width) is not int or type(height) is not int
                 or not 1 <= width <= 104 or not 1 <= height <= 104):
             raise ValueError("Pet dimensions exceed the display stage")
-        if manifest.get("background") != [8, 12, 20]:
+        if manifest.get("background") != list(cfg.UI_BACKGROUND):
             raise ValueError("Pet background does not match the UI")
         animations, states = manifest.get("animations"), manifest.get("states")
         if (not isinstance(animations, dict) or not 1 <= len(animations) <= 16

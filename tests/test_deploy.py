@@ -106,6 +106,7 @@ class DeployTests(unittest.TestCase):
         self.assertIn("from amoled_qspi import Bus", preflight.args[0][-1])
         self.assertIn("board = 'waveshare-s3-amoled-164'", preflight.args[0][-1])
         command = transfer.args[0]
+        self.assertLess(command.index(":pet_format.py"), command.index(":board_config.py"))
         self.assertIn(":co5300.py", command)
         self.assertEqual(command[-3:], ["+", "exec", "with open('openbuddy-board.txt', 'w') as f: f.write('waveshare-s3-amoled-164')"])
         self.assertEqual(reset.args[0][-1], "reset")

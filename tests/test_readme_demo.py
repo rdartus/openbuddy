@@ -7,7 +7,7 @@ import unittest
 
 from PIL import Image
 
-from c6lcd.buddy_protocol import STATES
+from device.buddy_protocol import STATES
 from tools.build_readme_demo import (Display, SCENES, SIZE, Scene, decode_frame,
                                     generate, load_font, rgb565)
 
@@ -49,7 +49,7 @@ class DemoTests(unittest.TestCase):
             (pet / "idle.rgb565").write_bytes(b"\xf8\x00" * 4 + b"\x07\xe0" * 4)
             manifest = {
                 "version": 1, "id": "test-pet", "format": "RGB565-BE",
-                "width": 2, "height": 2, "background": [8, 12, 20],
+                "width": 2, "height": 2, "background": [0, 0, 0],
                 "states": {state: "idle" for state in STATES + ("offline", "pairing")},
                 "animations": {"idle": {"file": "idle.rgb565", "frames": 2,
                                         "frame_ms": 100, "bytes": 16}},

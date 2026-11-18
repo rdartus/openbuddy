@@ -10,10 +10,11 @@ import sys
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from device.pet_format import BACKGROUND, FRAME_SIZE as OUTPUT_SIZE
+
 DEFAULT_PET = "super-saiyan-goku-combat"
-BACKGROUND = (8, 12, 20)
+LEGACY_BACKGROUND = (8, 12, 20)
 CELL = (192, 208)
-OUTPUT_SIZE = (96, 104)
 INSTALL_TIMEOUT = 600
 RESET_TIMEOUT = 20
 # Codex Pets src/domain/config.ts, blob 12403682002a5f4415c65e1514317c7e978161bc.
@@ -47,6 +48,14 @@ def valid_id(value):
     return value
 
 
+def pack_output(pet_id, background=BACKGROUND):
+    """Use one black pack for every board, without overwriting legacy dark packs."""
+    valid_id(pet_id)
+    if background not in (BACKGROUND, LEGACY_BACKGROUND):
+        raise ValueError("Unsupported pet background")
+    return Path("build/pets") / (pet_id + ("-black" if background == BACKGROUND else ""))
+
+
 def download(url, destination, limit):
     parsed = urlparse(url)
     if parsed.scheme != "https" or parsed.hostname != "codex-pets.net":
@@ -77,10 +86,13 @@ def rgb565(image):
     return result
 
 
-def convert(sheet_path, output, pet_id, source, frame_ms=None, force=False):
+def convert(sheet_path, output, pet_id, source, frame_ms=None, force=False,
+            background=BACKGROUND):
     from PIL import Image, ImageDraw
 
     valid_id(pet_id)
+    if background not in (BACKGROUND, LEGACY_BACKGROUND):
+        raise ValueError("Unsupported pet background")
     if frame_ms is not None and not 100 <= frame_ms <= 2000:
         raise ValueError("Frame duration must be between 100 and 2000 ms")
     if output.exists() and any(output.iterdir()) and not force:
@@ -94,10 +106,10 @@ def convert(sheet_path, output, pet_id, source, frame_ms=None, force=False):
     manifest = {
         "version": 1, "id": pet_id, "format": "RGB565-BE",
         "width": OUTPUT_SIZE[0], "height": OUTPUT_SIZE[1],
-        "background": list(BACKGROUND), "states": dict(states),
+        "background": list(background), "states": dict(states),
         "source": source, "animations": {},
     }
-    preview = Image.new("RGB", (len(clips) * 112, 128), BACKGROUND)
+    preview = Image.new("RGB", (len(clips) * 112, 128), background)
     draw = ImageDraw.Draw(preview)
     for index, (name, clip) in enumerate(clips.items()):
         path = output / (name + ".rgb565")
@@ -109,7 +121,7 @@ def convert(sheet_path, output, pet_id, source, frame_ms=None, force=False):
                 for frame in range(segment):
                     box = (frame * CELL[0], row * CELL[1], (frame + 1) * CELL[0], (row + 1) * CELL[1])
                     cell = sheet.crop(box).resize(OUTPUT_SIZE, Image.Resampling.NEAREST)
-                    opaque = Image.new("RGBA", OUTPUT_SIZE, BACKGROUND + (255,))
+                    opaque = Image.new("RGBA", OUTPUT_SIZE, background + (255,))
                     opaque.alpha_composite(cell)
                     data = rgb565(opaque)
                     handle.write(data)
@@ -144,8 +156,9 @@ def convert_command(args):
         "sha256": hashlib.sha256(sheet.read_bytes()).hexdigest(),
         "rights": "Community artwork; redistribution rights not verified; local use only",
     }
-    output = Path(args.output) if args.output else Path("build/pets") / pet_id
-    manifest = convert(sheet, output, pet_id, source, args.frame_ms, args.force)
+    background = BACKGROUND if args.background == "black" else LEGACY_BACKGROUND
+    output = Path(args.output) if args.output else pack_output(pet_id, background)
+    manifest = convert(sheet, output, pet_id, source, args.frame_ms, args.force, background)
     total = sum(item["bytes"] for item in manifest["animations"].values())
     print("Pack:", output)
     print("%d animations, %d frames, %d bytes; RGB565-BE 96x104" % (
@@ -224,6 +237,8 @@ def main():
     conversion.add_argument("--output")
     conversion.add_argument("--frame-ms", type=int)
     conversion.add_argument("--force", action="store_true")
+    conversion.add_argument("--background", choices=("black", "dark"), default="black",
+                            help="Black for both boards (default); dark for older firmware only")
     installation = commands.add_parser("install", help="Copy and verify a pack on ESP32 storage via USB")
     installation.add_argument("pack")
     installation.add_argument("--port", default="auto")

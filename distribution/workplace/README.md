@@ -36,7 +36,7 @@ opencode --version
 
 Le premier résultat doit être **3.11 à 3.14**, le deuxième **`win-amd64`**, et
 OpenCode doit être en **2.x**. Le dossier courant doit contenir ce `README.md`,
-`requirements.txt`, `pc`, `plugin`, `c6lcd` et `wheelhouse`.
+`requirements.txt`, `pc`, `plugin`, `firmware` et `wheelhouse`.
 
 Si `$HOME\OpenBuddy` contient déjà une ancienne installation, extraire le kit
 dans un autre dossier pour éviter de remplacer des fichiers existants.

@@ -12,7 +12,7 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 BOARD = "OPENBUDDY_S3_AMOLED_V2"
-BOARD_FILES = {"native/boards/" + BOARD + "/" + name for name in (
+BOARD_FILES = {"firmware/boards/" + BOARD + "/" + name for name in (
     "mpconfigboard.cmake", "mpconfigboard.h", "sdkconfig.board", "manifest.py", "openbuddy_build.py")}
 sys.path.insert(0, str(ROOT))
 from pc.deploy import FILES
@@ -46,7 +46,7 @@ def flash_budget(build):
     def allocated(sizes):
         return sum((size + block - 1) // block * block for size in sizes) + block * (len(sizes) + 8)
 
-    python_sizes = [(ROOT / "c6lcd" / name).stat().st_size for name in FILES]
+    python_sizes = [(ROOT / "device" / name).stat().st_size for name in FILES]
     frame_bytes = OUTPUT_SIZE[0] * OUTPUT_SIZE[1] * 2
     pixel_sizes = [clip_frames(clip) * frame_bytes for clip in CLIPS.values()]
     python_budget = allocated(python_sizes)
@@ -94,14 +94,14 @@ def package(micropython, idf, output):
     output.mkdir(parents=True, exist_ok=True)
     firmware = output / "openbuddy-s3-amoled-qspi.bin"
     firmware.write_bytes((build / "firmware.bin").read_bytes())
-    source_files = {"c6lcd/" + name for name in FILES}
+    source_files = {"device/" + name for name in FILES}
     source_files.update({"pc/__init__.py", "pc/deploy.py", "pc/pet.py", "pc/buddy.py",
                          "pc/requirements.txt", "pc/requirements-assets.txt",
                          "tools/test_amoled.py", "tools/prepare_pet_sd.py", "tools/verify_pet_sd.py",
                          "README-ESP32-S3-Windows.md", "docs/s3-qspi-build.md",
                          "docs/windows-uv-apres-flash.md", "THIRD_PARTY.md"})
-    source_files.update({"native/amoled_qspi/amoled_qspi.c",
-                         "native/amoled_qspi/micropython.cmake"})
+    source_files.update({"firmware/amoled_qspi/amoled_qspi.c",
+                         "firmware/amoled_qspi/micropython.cmake"})
     source_files.update(BOARD_FILES)
     hashes = {name: hashlib.sha256((ROOT / name).read_bytes()).hexdigest()
               for name in sorted(source_files)}

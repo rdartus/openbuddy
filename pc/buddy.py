@@ -10,7 +10,7 @@ from bleak import BleakClient, BleakScanner
 from bleak.backends.device import BLEDevice
 from bleak.exc import BleakError
 
-from c6lcd.buddy_protocol import (CHUNK_SIZE, DEVICE_NAME, RX_UUID, SERVICE_UUID,
+from device.buddy_protocol import (CHUNK_SIZE, DEVICE_NAME, RX_UUID, SERVICE_UUID,
                                   STATES, TX_UUID, VERSION, Decoder, encode,
                                   validate_command)
 

@@ -10,7 +10,7 @@ import subprocess
 import sys
 import time
 
-from c6lcd.buddy_protocol import STATES
+from device.buddy_protocol import STATES
 
 MIN_REFRESH_SECONDS = 60
 DEFAULT_REFRESH_SECONDS = 600

@@ -49,11 +49,17 @@ DEFAULT_ORIENTATION = "landscape"
 AUTO_ORIENTATION = False
 # Logical landscape canvas and UI geometry (the physical panel may be rotated).
 UI_WIDTH, UI_HEIGHT = 320, 172
+# Device modules are copied to the ESP32 root; host tooling imports the same source.
+try:
+    from pet_format import BACKGROUND as UI_BACKGROUND
+except ImportError:
+    from device.pet_format import BACKGROUND as UI_BACKGROUND
 UI_PET_SCALE = 1
 UI_PET_STAGE = (8, 35, 104, 104)
 UI_TEXT_X, UI_LINK_X = 124, 224
 UI_HEADER_Y, UI_STATE_Y, UI_DETAIL_Y, UI_INFO_Y = 15, 55, 87, 113
 UI_DIVIDER_Y, UI_FOOTER_Y = 141, 153
+UI_DIVIDER_INSET = 0
 
 # Stock firmware defaults to C6; dedicated builds freeze their board identity.
 # A saved explicit profile always wins. The chip model cannot identify PCB wiring.

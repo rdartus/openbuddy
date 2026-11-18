@@ -141,7 +141,7 @@ bash tools/build_s3_qspi.sh /path/to/micropython
 
 Le script controle les commits MicroPython et ESP-IDF attendus, compile puis
 produit `dist/s3-qspi/`. La definition de carte et le manifeste frozen sont dans
-`native/boards/OPENBUDDY_S3_AMOLED_V2/` ; le dossier de compilation est
+`firmware/boards/OPENBUDDY_S3_AMOLED_V2/` ; le dossier de compilation est
 `ports/esp32/build-OPENBUDDY_S3_AMOLED_V2`. Aucune connexion USB n'est necessaire pour compiler.
 La compilation C utilise l'environnement ESP-IDF, pas l'environnement uv du PC.
 

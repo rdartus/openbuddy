@@ -42,7 +42,7 @@ class PackageTests(unittest.TestCase):
     def test_bluetooth_kit_allowlist_and_integrity_manifest(self):
         with self.build_kit("bluetooth") as archive:
             prefix, names = self.check_common(archive, "bluetooth")
-            self.assertFalse(any(name.startswith(prefix + "c6lcd/buddy_usb") or name.endswith("deploy.py")
+            self.assertFalse(any(name.startswith(prefix + "device/buddy_usb") or name.endswith("deploy.py")
                                  for name in names))
             self.assertIn(b"pyserial", archive.read(prefix + "requirements.txt"))
             self.assertNotIn(b"mpremote", archive.read(prefix + "requirements.txt"))
@@ -51,7 +51,8 @@ class PackageTests(unittest.TestCase):
         with self.build_kit("usb") as archive:
             prefix, names = self.check_common(archive, "usb")
             for name in FIRMWARE_FILES:
-                self.assertIn(prefix + "c6lcd/" + name, names)
+                self.assertIn(prefix + "device/" + name, names)
+            self.assertIn(prefix + "device/pet_format.py", names)
             self.assertIn(prefix + "pc/deploy.py", names)
             self.assertIn(prefix + "tools/openbuddy-usb.cmd", names)
             self.assertIn(prefix + "tools/openbuddy-usb-stop.cmd", names)

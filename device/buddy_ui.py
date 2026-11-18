@@ -17,7 +17,7 @@ LABELS = {
     "working": "WORKING", "permission": "PERMISSION", "question": "QUESTION",
     "success": "DONE", "error": "ERROR", "retry": "RETRY", "pairing": "PAIRING",
 }
-BACKGROUND = rgb(8, 12, 20)
+BACKGROUND = rgb(*cfg.UI_BACKGROUND)
 WHITE = rgb(225, 233, 245)
 MUTED = rgb(120, 138, 158)
 
@@ -105,7 +105,8 @@ class BuddyUI:
             lcd.text(quota or (asset_label if asset_ready
                                else "USB SERIAL / v1" if usb else "HID + GATT / v1"),
                       cfg.UI_TEXT_X, cfg.UI_INFO_Y, MUTED, BACKGROUND)
-            lcd.fill_rect(12, cfg.UI_DIVIDER_Y, lcd.w - 24, 1, accent)
+            lcd.fill_rect(cfg.UI_DIVIDER_INSET, cfg.UI_DIVIDER_Y,
+                          lcd.w - 2 * cfg.UI_DIVIDER_INSET, 1, accent)
             lcd.text(footer[:(lcd.w - 24) // 8], 12, cfg.UI_FOOTER_Y, MUTED, BACKGROUND)
         frame = now // 350
         played = asset_ready and self.player.draw(state, now, force=changed)

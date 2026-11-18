@@ -5,7 +5,7 @@ import types
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "c6lcd"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "device"))
 with patch.dict(sys.modules, {
     "machine": types.SimpleNamespace(Pin=object, SPI=object, PWM=object),
     "framebuf": types.SimpleNamespace(),

@@ -9,7 +9,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 
-FIRMWARE = Path(__file__).resolve().parents[1] / "c6lcd"
+FIRMWARE = Path(__file__).resolve().parents[1] / "device"
 
 
 def load(name):
@@ -42,6 +42,9 @@ class UILayoutTests(unittest.TestCase):
                 cfg = load("board_config")
             with patch.dict(sys.modules, {"board_config": cfg, "st7789": driver}):
                 ui_module = load("buddy_ui")
+            self.assertEqual(cfg.UI_BACKGROUND, (0, 0, 0))
+            self.assertEqual(cfg.UI_DIVIDER_INSET, 0)
+            self.assertEqual(ui_module.BACKGROUND, driver.rgb(*cfg.UI_BACKGROUND))
             for pet_ready in (False, True):
                 with self.subTest(board=marker, pet_ready=pet_ready):
                     display = BoundedDisplay(cfg.UI_WIDTH, cfg.UI_HEIGHT)
@@ -59,6 +62,9 @@ class UILayoutTests(unittest.TestCase):
                     buddy.passkey = 123456
                     ui.draw(buddy, 350)
                     self.assertIn((0, 0, display.w, display.h), display.calls)
+                    self.assertIn((0, 0, display.w, 3), display.calls)
+                    self.assertIn((cfg.UI_DIVIDER_INSET, cfg.UI_DIVIDER_Y,
+                                   display.w - 2 * cfg.UI_DIVIDER_INSET, 1), display.calls)
                     if pet_ready:
                         player.draw.assert_called()
                     else:

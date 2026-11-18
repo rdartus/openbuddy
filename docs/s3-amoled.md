@@ -46,6 +46,14 @@ proche voisin, sans changer le pack 96x104 ni le contenu des textes. Le tactile 
 n'est pas utilisé. Aucune LED WS2812 n'est supposée, aucun GPIO de rétroéclairage
 C6 n'est activé sur l'AMOLED.
 
+Le fond de l'interface est noir RGB `(0,0,0)` sur **C6 et S3** ; sur l'AMOLED,
+cela éteint les pixels inoccupés, mais pas le rétroéclairage PWM du C6. Le pack
+doit être converti sur **le même fond**, y compris les bords à alpha partiel ;
+les anciens packs à fond `(8,12,20)` sont refusés sur les deux profils pour
+éviter un rectangle sombre autour du pet. Suivre uniquement le [README Windows S3](../README-ESP32-S3-Windows.md)
+pour la conversion et le remplacement du pack ; le `.bin` API v4 existant ne
+doit pas être reflashé pour ce changement Python/assets.
+
 ### Orientation automatique (v2 uniquement)
 
 Le QMI8658 (`WHO_AM_I = 0x05`, adresse `0x6B`) utilise I²C0 à 300 kHz, SDA=47,

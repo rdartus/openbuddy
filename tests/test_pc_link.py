@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from unittest.mock import patch
 
-from c6lcd.buddy_protocol import CHUNK_SIZE, Decoder, encode
+from device.buddy_protocol import CHUNK_SIZE, Decoder, encode
 from pc.buddy import Link, find_device
 
 

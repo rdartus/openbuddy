@@ -12,7 +12,7 @@ class PublicationTests(unittest.TestCase):
         selected = files()
         for name in ("distribution/workplace/requirements-usb.txt",
                      "tools/openbuddy-usb.cmd", "tools/openbuddy-usb-stop.cmd",
-                     "c6lcd/buddy_usb.py"):
+                     "device/buddy_usb.py"):
             self.assertIn(name, selected)
 
     def test_private_notes_and_device_keys_are_not_selected(self):
@@ -27,7 +27,7 @@ class PublicationTests(unittest.TestCase):
         self.assertIn("README-ESP32-S3-Windows.md", selected)
         for name in ("mpconfigboard.cmake", "mpconfigboard.h", "sdkconfig.board",
                      "manifest.py", "openbuddy_build.py"):
-            self.assertIn("native/boards/OPENBUDDY_S3_AMOLED_V2/" + name, selected)
+            self.assertIn("firmware/boards/OPENBUDDY_S3_AMOLED_V2/" + name, selected)
 
     def test_agents_guide_contains_no_private_identifiers(self):
         text = (ROOT / "AGENTS.md").read_text(encoding="utf-8")

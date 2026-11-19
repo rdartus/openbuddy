@@ -1,6 +1,6 @@
 """Waveshare S3 AMOLED 1.64 (SH8601/CO5300 naming), with native QSPI pixels.
 
-Keep the co5300 module name for persisted board profiles. The native bus owns
+The native bus owns
 the fixed QSPI pins and command framing; registers are single-lane, pixels quad.
 The profile's landscape canvas is rotated in native code on the 280x456 panel.
 """

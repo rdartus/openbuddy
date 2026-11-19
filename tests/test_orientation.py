@@ -79,7 +79,7 @@ class SensorTests(unittest.TestCase):
         self.i2c.deinit.assert_called_once()
 
     def test_only_v2_enables_imu(self):
-        for model in ("waveshare-c6-lcd-147", "waveshare-s3-amoled-164"):
+        for model in ("waveshare-c6-lcd-147",):
             cfg = config(model)
             self.assertFalse(cfg.AUTO_ORIENTATION)
             self.assertFalse(hasattr(cfg, "IMU_SDA"))
@@ -199,6 +199,7 @@ class CompanionOrientationTests(unittest.TestCase):
             "buddy_ble": types.SimpleNamespace(BuddyBLE=Mock()),
             "buddy_usb": types.SimpleNamespace(BuddyUSB=Mock()),
             "buddy_ui": types.SimpleNamespace(BuddyUI=Mock()),
+            "ft3168": types.SimpleNamespace(Touch=Mock()),
             "shared_spi": types.SimpleNamespace(SharedSPI=Mock()),
             "storage": types.SimpleNamespace(Storage=Mock()),
             "neopixel": types.SimpleNamespace(NeoPixel=MagicMock()),

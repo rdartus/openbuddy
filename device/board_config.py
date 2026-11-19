@@ -1,4 +1,4 @@
-"""Hardware profiles for Waveshare C6 LCD and S3 AMOLED (legacy and v2).
+"""Hardware profiles for Waveshare C6 LCD and S3 AMOLED v2.
 
 Single source of truth for pins and panel geometry. Imported by st7789.py and
 main.py, so a pin or offset change happens here only.
@@ -78,9 +78,9 @@ try:
         BOARD_MODEL = handle.read(64).strip()
 except OSError:
     pass
-if BOARD_MODEL in ("waveshare-s3-amoled-164", "waveshare-s3-amoled-164-v2"):
+if BOARD_MODEL == "waveshare-s3-amoled-164-v2":
     DISPLAY_DRIVER = "co5300"
-    LCD_SCLK, LCD_MOSI, LCD_CS, LCD_RST = 10, 11, 9, 21
+    LCD_SCLK, LCD_MOSI, LCD_CS, LCD_RST = 10, 11, 46, 21
     LCD_SPI_BAUD = 40_000_000
     LCD_DC = LCD_BL = RGB_LED = None
     BOOT_BUTTON = 0
@@ -94,20 +94,17 @@ if BOARD_MODEL in ("waveshare-s3-amoled-164", "waveshare-s3-amoled-164-v2"):
     UI_TEXT_X, UI_LINK_X = 228, 344
     UI_HEADER_Y, UI_STATE_Y, UI_DETAIL_Y, UI_INFO_Y = 24, 82, 132, 174
     UI_DIVIDER_Y, UI_FOOTER_Y = 256, 264
-    if BOARD_MODEL == "waveshare-s3-amoled-164-v2":
-        # Waveshare's v2 schematic and both vendor examples use GPIO46, not 9.
-        LCD_CS = 46
-        PET_STORAGE = "internal"
-        PET_DIRECTORY = "/openbuddy/pets"
-        PET_SELECTION = "/openbuddy/active.json"
-        AUTO_ORIENTATION = True
-        IMU_I2C_ID = 0
-        IMU_SDA, IMU_SCL = 47, 48
-        IMU_I2C_FREQ = 300_000
-        IMU_ADDRESS = 0x6B
-        # Measured upright: USB-C left => Y positive; USB-C right => Y negative.
-        # Gravity on X instead corresponds to portrait and must not rotate the UI.
-        IMU_LANDSCAPE_AXIS = 1
-        IMU_LANDSCAPE_SIGN = -1
+    PET_STORAGE = "internal"
+    PET_DIRECTORY = "/openbuddy/pets"
+    PET_SELECTION = "/openbuddy/active.json"
+    AUTO_ORIENTATION = True
+    IMU_I2C_ID = 0
+    IMU_SDA, IMU_SCL = 47, 48
+    IMU_I2C_FREQ = 300_000
+    IMU_ADDRESS = 0x6B
+    # Measured upright: USB-C left => Y positive; USB-C right => Y negative.
+    IMU_LANDSCAPE_AXIS = 1
+    IMU_LANDSCAPE_SIGN = -1
+    TOUCH_ADDRESS = 0x38
 elif BOARD_MODEL != "waveshare-c6-lcd-147":
     raise ValueError("Unknown OpenBuddy board profile: " + BOARD_MODEL)

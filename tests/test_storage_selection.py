@@ -52,11 +52,11 @@ class BoardProfileTests(unittest.TestCase):
         self.assertEqual(cfg.UI_DIVIDER_INSET, 0)
 
     def test_explicit_s3_marker_selects_amoled_and_separate_sd_pins_without_led(self):
-        cfg = self.profile("  waveshare-s3-amoled-164\n")
-        self.assertEqual(cfg.BOARD_MODEL, "waveshare-s3-amoled-164")
+        cfg = self.profile("  waveshare-s3-amoled-164-v2\n")
+        self.assertEqual(cfg.BOARD_MODEL, "waveshare-s3-amoled-164-v2")
         self.assertEqual(cfg.DISPLAY_DRIVER, "co5300")
         self.assertEqual((cfg.LCD_SPI_ID, cfg.LCD_SCLK, cfg.LCD_MOSI, cfg.LCD_CS, cfg.LCD_RST),
-                         (1, 10, 11, 9, 21))
+                          (1, 10, 11, 46, 21))
         self.assertEqual(cfg.LCD_SPI_BAUD, 40_000_000)
         self.assertEqual((cfg.SD_SPI_ID, cfg.SD_SCLK, cfg.SD_MOSI, cfg.SD_MISO, cfg.SD_CS),
                          (2, 41, 39, 40, 38))
@@ -73,7 +73,7 @@ class BoardProfileTests(unittest.TestCase):
     def test_explicit_c6_marker_and_unknown_profiles(self):
         cfg = self.profile("waveshare-c6-lcd-147\n")
         self.assertEqual(cfg.DISPLAY_DRIVER, "st7789")
-        for marker in ("esp32-s3", "waveshare-s3", "", "unknown"):
+        for marker in ("esp32-s3", "waveshare-s3", "", "unknown", "unsupported-s3"):
             with self.subTest(marker=marker), self.assertRaisesRegex(ValueError, "Unknown"):
                 self.profile(marker)
 
@@ -91,11 +91,11 @@ class BoardProfileTests(unittest.TestCase):
                           open=Mock(side_effect=OSError("no marker")))
         self.assertEqual((cfg.BOARD_MODEL, cfg.LCD_CS), (build.BOARD_MODEL, 46))
         cfg = load_module("board_config", {"openbuddy_build": build},
-                          open=Mock(return_value=io.StringIO("waveshare-s3-amoled-164")))
-        self.assertEqual((cfg.BOARD_MODEL, cfg.LCD_CS), ("waveshare-s3-amoled-164", 9))
+                          open=Mock(return_value=io.StringIO("waveshare-c6-lcd-147")))
+        self.assertEqual((cfg.BOARD_MODEL, cfg.LCD_CS), ("waveshare-c6-lcd-147", 14))
 
     def test_sd_only_bus_uses_s3_sd_controller_without_reconfiguring_lcd_bus(self):
-        cfg = self.profile("waveshare-s3-amoled-164")
+        cfg = self.profile("waveshare-s3-amoled-164-v2")
         machine = types.SimpleNamespace(Pin=Mock(OUT=1), SPI=Mock())
         shared = load_module("shared_spi", {"machine": machine, "board_config": cfg})
         bus = shared.SharedSPI(sd_only=True)
@@ -104,7 +104,7 @@ class BoardProfileTests(unittest.TestCase):
             sck=machine.Pin.return_value, mosi=machine.Pin.return_value,
             miso=machine.Pin.return_value)
         self.assertEqual(machine.Pin.call_args_list, [
-            call(9, machine.Pin.OUT, value=1), call(38, machine.Pin.OUT, value=1),
+            call(46, machine.Pin.OUT, value=1), call(38, machine.Pin.OUT, value=1),
             call(41), call(39), call(40),
         ])
         bus.for_lcd()

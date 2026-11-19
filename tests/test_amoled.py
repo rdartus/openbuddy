@@ -26,7 +26,7 @@ def load_module(name, dependencies=None, directory=FIRMWARE, **overrides):
 
 
 class AMOLEDTests(unittest.TestCase):
-    BOARD = "waveshare-s3-amoled-164"
+    BOARD = "waveshare-s3-amoled-164-v2"
 
     def setUp(self):
         cfg = load_module("board_config", open=Mock(return_value=io.StringIO(
@@ -363,8 +363,7 @@ class AMOLEDTests(unittest.TestCase):
             tool.main()
         lcd.close.assert_called_once_with()
         constructor.reset_mock()
-        for model, driver in (("waveshare-c6-lcd-147", "st7789"),
-                              ("waveshare-s3-amoled-164", "st7789")):
+        for model, driver in (("waveshare-c6-lcd-147", "st7789"),):
             cfg.BOARD_MODEL, cfg.DISPLAY_DRIVER = model, driver
             with self.assertRaisesRegex(RuntimeError, "board profile"):
                 tool.main()

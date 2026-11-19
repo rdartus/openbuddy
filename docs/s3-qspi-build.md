@@ -12,9 +12,9 @@ opcode `0x02`, pixels avec opcode `0x32`, en-tete sur une ligne, pixels sur quat
 Il est compile dans MicroPython : un simple `pc.deploy` sur le `.bin` officiel
 ne suffit plus. Le C6 n'est pas concerne et conserve son firmware officiel.
 
-Le depot constructeur **v2** utilise **CS=GPIO46**, et non GPIO9 comme l'ancien
-profil OpenBuddy. Selectionner `waveshare-s3-amoled-164-v2` : le nom du pilote
-SH8601/CO5300 ne permet pas de choisir le brochage.
+Le depot constructeur **v2** utilise **CS=GPIO46**. Selectionner
+`waveshare-s3-amoled-164-v2` : le nom du pilote SH8601/CO5300 ne permet pas
+de choisir le brochage.
 
 Configuration : MicroPython **v1.29.0**, ESP-IDF **v5.5.2**, carte dediee
 `OPENBUDDY_S3_AMOLED_V2`, derivee de `ESP32_GENERIC_S3` / `SPIRAM_OCT`, flash
@@ -50,7 +50,9 @@ les métadonnées et une réserve de 256 Kio. Ce contrôle ne remplace pas `stat
 reel, les couleurs, la rotation ou les redemarrages.** Le QMI8658 choisit entre les
 deux sens paysage sur le profil v2 ; son axe Y et son signe ont été mesurés sur une
 carte, mais la rotation corrigée reste à vérifier visuellement après déploiement.
-Le tactile n'est pas utilisé. Aucune animation proprietaire n'est distribuee avec le firmware.
+Le tactile FT3168 est utilisé par l'application Python pour les demandes OpenCode ;
+il ne fait pas partie du module natif QSPI. Aucune animation proprietaire n'est
+distribuee avec le firmware.
 
 ## GitHub Actions
 

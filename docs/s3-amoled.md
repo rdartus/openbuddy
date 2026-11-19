@@ -8,8 +8,8 @@ ou sa fiche produit avant de flasher : le type de puce seul ne permet pas de
 deviner le brochage. Le profil est choisi explicitement au deploiement et conserve
 dans `openbuddy-board.txt`. Un deploiement sans `--board` conserve ce choix ; sans
 marqueur, le build dedie utilise le profil **`waveshare-s3-amoled-164-v2`**.
-Un ancien marqueur n'est jamais remplace automatiquement : choisir explicitement
-`--board waveshare-s3-amoled-164-v2` lors de la migration.
+Un marqueur sauvegardé est prioritaire : sélectionner explicitement
+`--board waveshare-s3-amoled-164-v2` si le profil enregistré est incorrect.
 
 | Fonction | GPIO |
 |---|---|
@@ -19,16 +19,15 @@ Un ancien marqueur n'est jamais remplace automatiquement : choisir explicitement
 | QMI8658 I²C SDA / SCL (partagé avec le tactile) | 47 / 48 |
 | SD CLK / MOSI / MISO / CS, bus separe | 41 / 39 / 40 / 38 |
 
-**Ne pas confondre les revisions** : l'ancien profil `waveshare-s3-amoled-164`
-conserve CS=GPIO9 et son comportement SD optionnel. Le profil **v2 utilise GPIO46**,
-40 MHz comme le constructeur, et le pet exclusivement en flash interne.
+Le profil v2 utilise **CS GPIO46**, 40 MHz comme le constructeur, et le pet
+exclusivement en flash interne.
 Le choix du CS est transmis au module natif (`Bus(cs=...)`, API v4), y compris
 pour liberer correctement la broche apres une erreur ou un reset logiciel.
 
 Les anciennes demos Waveshare nomment le pilote **SH8601**, les nouvelles
 **CO5300** ; elles partagent l'initialisation et le transport QSPI des pixels.
 Ce changement de nom ne constitue pas une detection confirmee du silicium.
-Le nom Python `co5300` est conserve pour les profils existants.
+Le nom Python `co5300` est conserve.
 
 Le pilote exige le module C **`amoled_qspi` compile dans MicroPython** : registres
 avec opcode `0x02`, pixels RGB565 BE avec opcode `0x32`, en-tete sur une ligne
@@ -42,8 +41,13 @@ configuration de compilation et les limites du transport.
 L'interface reste exclusivement en **paysage 456x280**, sur toute la dalle.
 La geometrie est definie par profil dans `board_config.py` : le C6 garde son
 interface 320x172, le S3 utilise tout son panneau et agrandit le pet x2 au plus
-proche voisin, sans changer le pack 96x104 ni le contenu des textes. Le tactile FT3168
-n'est pas utilisé. Aucune LED WS2812 n'est supposée, aucun GPIO de rétroéclairage
+proche voisin, sans changer le pack 96x104. Le tactile FT3168 (I²C 0x38 sur
+SDA47/SCL48) sert à choisir une réponse OpenCode par glissement horizontal et
+à la valider par un toucher. L'interface affiche la demande et le choix à droite
+du pet, avec défilement du texte qui ne tient pas dans la zone. Dès que la
+demande et les choix sont reçus, un toucher valide le choix affiché sans attendre
+la fin du défilement, y compris pour « Toujours autoriser ».
+Sans tactile fonctionnel, répondre depuis OpenCode. Aucune LED WS2812 n'est supposée, aucun GPIO de rétroéclairage
 C6 n'est activé sur l'AMOLED.
 
 Le fond de l'interface est noir RGB `(0,0,0)` sur **C6 et S3** ; sur l'AMOLED,
@@ -70,8 +74,8 @@ rotation manuelle de 180° et ajoute une correction de 180° aux décisions du c
 jusqu'au prochain redémarrage, sans être immédiatement annulé par l'automatisme.
 Le choix manuel reste mémorisé comme orientation de démarrage/de secours, mais la
 correction du capteur est volatile. BOOT long et la confirmation d'appairage sont
-inchangés. Sans IMU, la rotation manuelle reste disponible. C6 et ancien S3 ne
-créent aucun bus I²C et conservent les deux vues paysage manuelles.
+inchangés. Sans IMU, la rotation manuelle reste disponible. Le C6 ne crée pas
+de bus I²C et conserve les deux vues paysage manuelles.
 
 `status` expose aussi `orientation` et `imu` (capteur lisible). Mesures sur une
 carte v2 tenue debout, écran face à soi : **USB-C à gauche** donne Y ≈ +16 200,
@@ -108,8 +112,7 @@ dans le `.bin` ou les artefacts publics.
 `--storage auto` consulte le profil et l'espace **effectivement disponible** via
 `os.statvfs`, pas simplement les 16 Mo annonces. **Sur la v2, il impose la flash
 interne et echoue si elle est insuffisante ; aucun repli sur la TF et
-`--storage sd` est refuse.** Sur l'ancien profil S3, il privilegie l'interne puis
-la SD si necessaire. Sur le C6, il conserve la SD.
+`--storage sd` est refuse.** Sur le C6, il conserve la SD.
 `--storage internal` interdit ce repli et renvoie une erreur si la flash ne suffit
 pas. Les deux modes gardent 256 Kio de reserve avec marge d'allocation et de
 metadonnees ; un remplacement exige conservativement la place d'un pack complet
@@ -118,14 +121,11 @@ supplementaire. Aucun formatage automatique ni nettoyage d'autres donnees.
 Sur la v2, le lecteur cherche uniquement dans `/openbuddy`, puis utilise le robot
 integre si le pack manque ou est invalide. Meme les nouvelles tentatives de
 chargement ne creent aucun bus SD et ne montent aucune carte TF.
-Sur l'ancien profil, il cherche aussi dans `/sd/openbuddy`. Un pack interne valide
-n'initialise pas le bus SD. Pour basculer volontairement vers la SD sur cet ancien profil,
-retirer ou renommer uniquement `/openbuddy/active.json` dans le REPL, programme
-interrompu. `status` expose `assets: "internal"` ou `"sd"`, ainsi que `pet` et `sd`.
+`status` expose `assets: "internal"`, ainsi que `pet` et `sd`.
 
 Les transferts verifies SHA-256 activent la selection en dernier. Une interruption
 d'un remplacement du meme pack peut laisser ce pack incomplet : le lecteur revient
-alors au robot (ou a la SD sur l'ancien profil uniquement). Reprendre avec
+alors au robot. Reprendre avec
 `--replace`. Les cles BLE sont conservees.
 
 ## Installation Windows PowerShell

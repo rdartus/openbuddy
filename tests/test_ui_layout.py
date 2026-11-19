@@ -23,6 +23,7 @@ class BoundedDisplay:
     def __init__(self, width, height):
         self.w, self.h = width, height
         self.calls = []
+        self.texts = []
 
     def fill_rect(self, x, y, width, height, color):
         assert 0 <= x < self.w and 0 <= y < self.h
@@ -32,9 +33,36 @@ class BoundedDisplay:
     def text(self, value, x, y, fg, bg, scale=1):
         assert 0 <= x <= self.w and 0 <= y <= self.h - 8 * scale
         assert len(value) * 8 * scale <= self.w - x, (value, x, self.w)
+        self.texts.append(value)
 
 
 class UILayoutTests(unittest.TestCase):
+    def test_s3_prompt_scrolls_inside_right_panel_without_blocking_approval(self):
+        with patch("builtins.open", return_value=io.StringIO("waveshare-s3-amoled-164-v2")):
+            cfg = load("board_config")
+        driver = types.SimpleNamespace(rgb=lambda r, g, b: (r << 16) | (g << 8) | b)
+        with patch.dict(sys.modules, {"board_config": cfg, "st7789": driver}):
+            ui_module = load("buddy_ui")
+        display = BoundedDisplay(cfg.UI_WIDTH, cfg.UI_HEIGHT)
+        player = Mock(available=False)
+        ui = ui_module.BuddyUI(display, None, player)
+        title = "Edit " + "x" * 100
+        prompt = {"kind": "permission", "token": "per_1", "text": title,
+                  "options": ["REFUSE", "AUTORISER UNE FOIS", "TOUJOURS AUTORISER"],
+                  "selected": 0, "sent": False, "title_at": None, "option_at": None}
+        buddy = Mock(kind="usb", state="permission", label="Approval pending",
+                     passkey=None, confirm=False, hid_until=None,
+                     secure=True, info="", prompt=types.SimpleNamespace(ready=lambda: prompt))
+        buddy.online.return_value = True
+        buddy.pairing_open.return_value = False
+        with patch.object(ui_module.time, "ticks_diff", lambda a, b: a - b, create=True):
+            ui.draw(buddy, 200_000)
+            self.assertIn("SWIPE: CHOICE  TAP: ANSWER", display.texts)
+            for now in range(200_350, 212_000, 350):
+                ui.draw(buddy, now)
+        self.assertIn("PERMISSION", display.texts)
+        self.assertIn("REFUSE", display.texts)
+
     def test_all_states_and_pairing_fit_both_panels_with_and_without_pet(self):
         driver = types.SimpleNamespace(rgb=lambda r, g, b: (r << 16) | (g << 8) | b)
         for marker in ("waveshare-c6-lcd-147", "waveshare-s3-amoled-164-v2"):

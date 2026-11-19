@@ -65,7 +65,7 @@ def close_resource(name, resource):
 
 
 def run():
-    lcd = led = buddy = storage = player = orientation = None
+    lcd = led = buddy = storage = player = orientation = touch = None
     stage = "imports"
     try:
         from machine import Pin
@@ -95,15 +95,26 @@ def run():
         stage = "storage"
         storage = Storage(bus)
         stage = "orientation"
+        touch_retry_at = None
         if cfg.AUTO_ORIENTATION:
             from buddy_orientation import AutoOrientation
             orientation = AutoOrientation()
+            if hasattr(cfg, "TOUCH_ADDRESS"):
+                from ft3168 import Touch
+            orientation.poll(time.ticks_ms(), lcd.orientation)
+            if hasattr(cfg, "TOUCH_ADDRESS") and orientation.sensor is not None:
+                try:
+                    touch = Touch(lambda: orientation.sensor.i2c)
+                except (OSError, ValueError) as error:
+                    print("Touch unavailable; use OpenCode to answer:", error)
+                    touch_retry_at = time.ticks_add(time.ticks_ms(), 3000)
         stage = "assets"
         player = storage.load_player(lcd)
 
         def asset_status():
             return {"sd": storage.mounted, "orientation": lcd.orientation,
                     "imu": orientation.available if orientation is not None else False,
+                    "touch": touch is not None,
                     "assets": player.source if player is not None and player.available else None,
                     "pet": player.pet_id if player is not None and player.available else None}
 
@@ -186,14 +197,39 @@ def run():
                 if name is not None:
                     lcd.set_orientation(name)
                     ui.invalidate()  # Automatic rotations never write to flash.
+                if orientation.sensor is None and touch is not None:
+                    touch.close()
+                    touch = None
+                if (hasattr(cfg, "TOUCH_ADDRESS") and orientation.sensor is not None and touch is None
+                        and (touch_retry_at is None or time.ticks_diff(now, touch_retry_at) >= 0)):
+                    try:
+                        touch = Touch(lambda: orientation.sensor.i2c)
+                    except (OSError, ValueError):
+                        touch_retry_at = time.ticks_add(now, 3000)
             pairing = buddy is not None and (buddy.pairing_open(now) or buddy.passkey is not None)
-            ui.draw(usb if buddy is None or (usb.online(now) and not pairing) else buddy, now)
+            active = usb if buddy is None or (usb.online(now) and not pairing) else buddy
+            if touch is not None and active.online(now) and not pairing:
+                try:
+                    gesture = touch.poll(now, lcd.orientation)
+                except OSError:
+                    touch.close()
+                    touch = None
+                    touch_retry_at = time.ticks_add(now, 3000)
+                    gesture = None
+                if gesture == "left":
+                    active.prompt.move(1)
+                elif gesture == "right":
+                    active.prompt.move(-1)
+                elif gesture == "tap":
+                    active.choose()
+            ui.draw(active, now)
             time.sleep_ms(20)
     except Exception as error:
         report_error(error, stage, buddy)
         # Do not draw an error on a potentially broken or deinitialized LCD bus.
         raise
     finally:
+        close_resource("touch", touch)
         close_resource("orientation", orientation)
         close_resource("BLE", buddy)
         close_resource("player", player)

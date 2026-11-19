@@ -6,8 +6,9 @@ import subprocess
 import sys
 
 FILES = ("pet_format.py", "board_config.py", "shared_spi.py", "sdcard_spi.py", "storage.py",
-         "st7789.py", "co5300.py", "buddy_protocol.py", "buddy_ble.py", "buddy_usb.py", "pet_player.py",
-         "buddy_ui.py", "buddy_orientation.py", "qmi8658.py", "companion.py", "orientation_demo.py", "main.py")
+         "st7789.py", "co5300.py", "buddy_protocol.py", "buddy_ble.py", "buddy_usb.py", "buddy_prompt.py",
+         "pet_player.py", "buddy_ui.py", "buddy_orientation.py", "qmi8658.py", "ft3168.py",
+         "companion.py", "orientation_demo.py", "main.py")
 PREFLIGHT_TIMEOUT = 30
 DEPLOY_TIMEOUT = 180
 RESET_TIMEOUT = 20
@@ -16,8 +17,7 @@ RESET_TIMEOUT = 20
 def main():
     parser = argparse.ArgumentParser(description="Deploy OpenBuddy MicroPython files without erasing flash")
     parser.add_argument("--port", default="COM9")
-    parser.add_argument("--board", choices=("waveshare-c6-lcd-147", "waveshare-s3-amoled-164",
-                                           "waveshare-s3-amoled-164-v2"),
+    parser.add_argument("--board", choices=("waveshare-c6-lcd-147", "waveshare-s3-amoled-164-v2"),
                         help="Persist a board profile; omitted keeps the saved profile or build default")
     parser.add_argument("--timeout", type=int, default=DEPLOY_TIMEOUT, metavar="SECONDS",
                         help="Maximum file transfer duration (default: %(default)s seconds)")
@@ -47,7 +47,7 @@ def main():
                 "            board = BOARD_MODEL\n"
                 "        except ImportError:\n"
                 "            pass\n"
-                "if board in ('waveshare-s3-amoled-164', 'waveshare-s3-amoled-164-v2'):\n"
+                "if board == 'waveshare-s3-amoled-164-v2':\n"
                 "    try:\n"
                 "        from amoled_qspi import Bus, API_VERSION\n"
                 "        if API_VERSION < 4: raise ImportError('Outdated QSPI firmware')\n"

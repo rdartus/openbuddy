@@ -6,8 +6,9 @@ Il affiche aussi des **notifications Windows natives** : bannière et centre de
 notifications, sans inclure le contenu des prompts ou des questions.
 
 Le firmware et les animations Goku sont déjà sur l'ESP32 : **rien à reflasher,
-aucune carte SD à préparer**. Les boutons restent en lecture seule : aucune
-permission ou réponse n'est validée automatiquement.
+aucune carte SD à préparer**. Sur le S3 AMOLED v2 avec le firmware Python 0.5.0,
+le tactile permet de répondre aux choix uniques et aux permissions (y compris
+« Toujours autoriser »). Le C6 non tactile conserve la validation dans OpenCode.
 
 ## Prérequis
 
@@ -242,7 +243,8 @@ Valeurs attendues dans `status` :
 - `sounds_enabled: true` : notifications sonores activées ;
 - `notifications_enabled: true` : notifications Windows activées ;
 - `notifications_last_error: null` : aucune erreur de soumission de toast observée ;
-- `read_only: true` : aucune validation automatique de demande.
+- `touch_connected: true` et `read_only: false` : réponses tactiles S3 disponibles ;
+  sans tactile, les demandes restent à valider dans OpenCode.
 
 **Ctrl+C** arrête aussi le pont. Pour changer le mode sonore, l'arrêter puis le
 relancer avec ou sans `--mute`. Ne pas lancer deux ponts ou une démo BLE en même temps.

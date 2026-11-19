@@ -79,12 +79,37 @@ class UsbFirmwareTests(unittest.TestCase):
         self.assertEqual((reply["transport"], reply["hid"], reply["pet"]), ("usb", False, "a" * 64))
         self.assertLessEqual(len(self.console.written), 257)
 
+    def test_s3_status_keeps_touch_flag_with_a_long_pet_id(self):
+        self.buddy.asset_status = lambda: {"sd": False, "orientation": "landscape_inv",
+                                           "imu": True, "touch": True, "assets": "internal",
+                                           "pet": "a" * 64}
+        self.send(frame("status", 2147483647))
+        reply = self.console.replies()[0]
+        self.assertTrue(reply["touch"])
+        self.assertNotIn("pet", reply)
+        self.assertLessEqual(len(self.console.written), 257)
+
     def test_keyboard_arming_is_refused(self):
         self.send(frame("hid_arm"))
         reply = self.console.replies()[0]
         self.assertEqual(reply["event"], "error")
         self.assertIsNone(self.buddy.hid_until)
         self.assertFalse(self.buddy.online(self.now))
+
+    def test_fragmented_question_and_tap_sends_one_index_without_hid(self):
+        self.send(frame("state", state="question"))
+        self.send(frame("prompt", 2, kind="form", token="frm_1", text="Which language?", count=2, parts=1))
+        self.send(frame("option", 3, token="frm_1", index=0, text="Python"))
+        self.assertIsNone(self.buddy.prompt.ready())
+        self.send(frame("option", 4, token="frm_1", index=1, text="Rust"))
+        self.assertEqual(self.buddy.prompt.ready()["selected"], 0)
+        self.buddy.prompt.move(1)
+        self.buddy.choose()
+        self.buddy.choose()
+        self.assertEqual([event for event in self.console.replies() if event.get("event") == "choice"], [
+            {"v": 1, "event": "choice", "kind": "form", "token": "frm_1", "index": 1}])
+        self.send(frame("state", 5, state="working"))
+        self.assertIsNone(self.buddy.prompt.ready())
 
     def test_invalid_commands_get_an_error_with_their_id(self):
         self.send(frame("state", 7, state="exploding"))

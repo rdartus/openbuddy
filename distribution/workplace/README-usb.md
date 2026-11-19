@@ -4,13 +4,15 @@ Ce kit relie les événements d'**OpenCode v2** au compagnon ESP32 par **câble 
 sans Bluetooth, et joue les **notifications sonores et Windows** sur le PC.
 Écran, animation Goku et halo sont identiques à la version Bluetooth.
 
-Limites de ce mode : les boutons de l'ESP32 ne sont pas remontés et le clavier HID
-(F13) n'existe pas. Les boutons restent en lecture seule : aucune permission ou
-réponse n'est validée automatiquement. La version Bluetooth reste disponible dans
+Limites de ce mode : BOOT n'est pas remonté et le clavier HID
+(F13) n'existe pas. Sur le S3 AMOLED v2 avec le firmware Python 0.5.0, le
+tactile permet de répondre aux questions à choix unique et aux permissions
+(refus, autorisation unique ou permanente). Le C6 n'est pas tactile ; y répondre
+dans OpenCode. La version Bluetooth reste disponible dans
 `openbuddy-workplace.zip`.
 
-Les images de Goku restent sur la **carte SD** de l'ESP32 (non incluses ici). Sans
-elles, le firmware affiche un robot intégré de secours.
+Les images de Goku restent sur la **carte SD C6 ou la flash S3** (non incluses ici).
+Sans elles, le firmware affiche un robot intégré de secours.
 
 ## Prérequis
 

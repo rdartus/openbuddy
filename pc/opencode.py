@@ -1,4 +1,4 @@
-"""Read-only OpenCode event bridge. Run: python -m pc.opencode [run|status|stop]."""
+"""OpenCode event and tactile response bridge. Run: python -m pc.opencode [run|status|stop]."""
 
 import argparse
 import asyncio
@@ -96,6 +96,22 @@ class Registry:
         if previous is None and len(self.sources) >= 64:
             raise ValueError("Too many event sources")
         view = {key: message[key] for key in ("state", "label") + fields}
+        choice = message.get("choice")
+        if choice is not None:
+            if (not isinstance(choice, dict) or choice.get("kind") not in ("form", "permission")
+                    or not isinstance(choice.get("id"), str)
+                    or not re.fullmatch(r"[a-zA-Z0-9_-]{1,48}", choice["id"])
+                    or not isinstance(choice.get("title"), str)
+                    or not 1 <= len(choice["title"]) <= 600
+                    or not isinstance(choice.get("options"), list)
+                    or not 2 <= len(choice["options"]) <= 8
+                    or any(not isinstance(option, str) or not 1 <= len(option) <= 120
+                           for option in choice["options"])
+                    or any(not 32 <= ord(char) <= 126 for text in
+                           [choice["title"], *choice["options"]] for char in text)
+                    or message["state"] != ("question" if choice["kind"] == "form" else "permission")):
+                raise ValueError("Invalid choice preview")
+            view["choice"] = choice
         self.sources[source] = Lease(sequence, self.clock(), view)
         return True
 
@@ -110,9 +126,19 @@ class Registry:
         permissions = sum(item.view["pending_permissions"] for item in leases)
         forms = sum(item.view["pending_forms"] for item in leases)
         if permissions:
-            return {"state": "permission", "label": ("%d approval(s) pending" % permissions)[:24]}
+            view = {"state": "permission", "label": ("%d approval(s) pending" % permissions)[:24]}
+            selected = next(((source, lease.view["choice"]) for source, lease in self.sources.items()
+                             if lease.view.get("choice", {}).get("kind") == "permission"), None)
+            if selected is not None:
+                view["source"], view["choice"] = selected
+            return view
         if forms:
-            return {"state": "question", "label": ("%d response(s) pending" % forms)[:24]}
+            view = {"state": "question", "label": ("%d response(s) pending" % forms)[:24]}
+            selected = next(((source, lease.view["choice"]) for source, lease in self.sources.items()
+                             if lease.view.get("choice", {}).get("kind") == "form"), None)
+            if selected is not None:
+                view["source"], view["choice"] = selected
+            return view
         best = max(leases, key=lambda lease: (PRIORITY[lease.view["state"]], lease.received))
         return {key: best.view[key] for key in ("state", "label")}
 
@@ -125,6 +151,7 @@ class Bridge:
         self.no_ble = no_ble
         self.serial_port = serial_port
         self.usb_connected = False
+        self.touch_connected = False
         self.path = path or discovery_path()
         self.token = secrets.token_hex(32)
         self.registry = Registry()
@@ -139,6 +166,7 @@ class Bridge:
         self.quota = QuotaMonitor(quota_path)
         self.no_quota = no_quota
         self.quota_worker = None
+        self.pending_choice = None
 
     async def start(self):
         if self.path.exists():
@@ -168,13 +196,15 @@ class Bridge:
         self.sound_worker = asyncio.create_task(self.notification_worker())
         if not self.no_quota:
             self.quota_worker = asyncio.create_task(self.quota.run())
-        print("OpenBuddy event bridge listening on 127.0.0.1:%d (read-only)" % self.port, flush=True)
+        print("OpenBuddy event bridge listening on 127.0.0.1:%d" % self.port, flush=True)
 
     def health(self):
         view = self.registry.current()
         return {"v": 1, "sources": len(self.registry.sources), "ble_connected": self.ble_connected,
                 "usb_connected": self.usb_connected,
-                "state": view, "last_delivered": self.last_delivered, "read_only": True,
+                "touch_connected": self.touch_connected,
+                "state": {key: value for key, value in view.items() if key not in ("choice", "source")}
+                 if view is not None else None, "last_delivered": self.last_delivered, "read_only": False,
                 "sounds_enabled": self.notifier.enabled,
                 "notifications_enabled": self.desktop_notifier.enabled,
                 "notifications_last_error": self.desktop_notifier.error,
@@ -206,6 +236,20 @@ class Bridge:
                     status, response = 400, {"error": "Chunked requests are not supported"}
                 elif method == "GET" and path == "/health":
                     status, response = 200, self.health()
+                elif method == "GET" and path.startswith("/choice?source="):
+                    source = path[len("/choice?source="):]
+                    if re.fullmatch(r"[a-zA-Z0-9-]{1,64}", source):
+                        current = self.registry.current()
+                        selected = self.pending_choice
+                        if (self.touch_connected and selected is not None and current is not None
+                                and current.get("source") == source
+                                and selected["source"] == source
+                                and selected["id"] == current["choice"]["id"]):
+                            self.pending_choice = None
+                            status, response = 200, {"choice": {key: selected[key] for key in ("kind", "id", "index")},
+                                                     "touch": self.touch_connected}
+                        else:
+                            status, response = 200, {"choice": None, "touch": self.touch_connected}
                 elif method == "POST" and path == "/stop":
                     status, response = 200, {"stopping": True}
                     self.stopped.set()
@@ -217,6 +261,8 @@ class Bridge:
                         status, response = 415, {"error": "JSON required"}
                     else:
                         payload = json.loads(await reader.readexactly(length))
+                        if isinstance(payload, dict) and not self.touch_connected:
+                            payload.pop("choice", None)
                         accepted = self.registry.update(payload)
                         status, response = 200, {"accepted": accepted}
                 else:
@@ -243,6 +289,18 @@ class Bridge:
             self.quota.observe(view["state"] if view is not None else None)
             await asyncio.sleep(0.25)
 
+    def device_event(self, message):
+        if not self.touch_connected or message.get("event") != "choice" or message.get("v") != 1:
+            return
+        view = self.registry.current()
+        choice = view.get("choice") if view else None
+        if (choice is not None and message.get("kind") == choice["kind"]
+                and message.get("token") == choice["id"]
+                and type(message.get("index")) is int
+                and 0 <= message["index"] < len(choice["options"])):
+            self.pending_choice = {"source": view["source"], "kind": choice["kind"],
+                                   "id": choice["id"], "index": message["index"]}
+
     async def ble_worker(self):
         while True:
             link = None
@@ -255,22 +313,31 @@ class Bridge:
 
                 async with BleakClient(device, services=[SERVICE_UUID], timeout=30,
                                        disconnected_callback=disconnected) as client:
-                    link = Link(client, lambda event: print("Device event:", event.get("event"), "(read-only)", flush=True))
+                    link = Link(client, self.device_event)
                     await client.start_notify(TX_UUID, link.notification)
-                    await link.request("status")
+                    status = await link.request("status")
+                    self.touch_connected = bool(status and status.get("touch"))
                     self.ble_connected = True
                     print("OpenBuddy BLE connected", flush=True)
-                    await self.deliver_states(link)
+                    await self.deliver_states(link, self.touch_connected)
                     raise ConnectionError("BLE connection closed")
             except (BleakError, ConnectionError, OSError, TimeoutError, ValueError) as error:
                 print("BLE unavailable:", type(error).__name__, "- retrying", flush=True)
             finally:
                 self.ble_connected = False
+                self.touch_connected = False
             await asyncio.sleep(3)
 
-    async def deliver_states(self, link):
-        last, ping_at = None, 0
+    async def deliver_states(self, link, touch=True):
+        last, ping_at, touch_check_at = None, 0, time.monotonic() + 15
         while not link.disconnected.is_set():
+            if not touch and time.monotonic() >= touch_check_at:
+                status = await link.request("status")
+                touch = bool(status and status.get("touch"))
+                self.touch_connected = touch
+                touch_check_at = time.monotonic() + 15
+                if touch:
+                    last = None  # Re-send the pending choice after touch recovery.
             view = self.registry.current()
             if view is not None and self.quota.text:
                 view = dict(view, info=self.quota.text)
@@ -278,8 +345,20 @@ class Bridge:
                 # No plugin lease: stop heartbeats so firmware becomes OFFLINE.
                 last = None
             elif view != last:
-                await link.request("state", **view)
-                self.last_delivered = dict(view)
+                state = {key: value for key, value in view.items() if key not in ("choice", "source")}
+                await link.request("state", **state)
+                choice = view.get("choice") if touch else None
+                if choice is not None:
+                    title = choice["title"]
+                    parts = [title[:90]] + [title[index:index + 120]
+                                             for index in range(90, len(title), 120)]
+                    await link.request("prompt", kind=choice["kind"], token=choice["id"],
+                                       text=parts[0], count=len(choice["options"]), parts=len(parts))
+                    for index, text in enumerate(parts[1:], 1):
+                        await link.request("part", token=choice["id"], index=index, text=text)
+                    for index, text in enumerate(choice["options"]):
+                        await link.request("option", token=choice["id"], index=index, text=text)
+                self.last_delivered = dict(state)
                 last, ping_at = view, time.monotonic()
                 print("State:", view["state"], "-", view["label"], flush=True)
             elif time.monotonic() - ping_at >= 4:
@@ -292,16 +371,18 @@ class Bridge:
             link = None
             try:
                 port = await asyncio.to_thread(find_serial_port, self.serial_port)
-                link = await UsbLink.open(port, lambda event: print("Device event:", event.get("event"), "(read-only)", flush=True))
-                await link.request("status")
+                link = await UsbLink.open(port, self.device_event)
+                status = await link.request("status")
+                self.touch_connected = bool(status and status.get("touch"))
                 self.usb_connected = True
                 print("OpenBuddy USB connected on", port, flush=True)
-                await self.deliver_states(link)
+                await self.deliver_states(link, self.touch_connected)
                 raise ConnectionError("USB connection closed")
             except (ConnectionError, OSError, TimeoutError, ValueError) as error:
                 print("USB unavailable:", type(error).__name__, "-", error, "- retrying", flush=True)
             finally:
                 self.usb_connected = False
+                self.touch_connected = False
                 if link is not None:
                     link.close()
             await asyncio.sleep(3)
@@ -356,7 +437,7 @@ async def sound_test(muted):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Read-only OpenCode v2 to OpenBuddy event bridge")
+    parser = argparse.ArgumentParser(description="OpenCode v2 to OpenBuddy event bridge")
     parser.add_argument("command", choices=("run", "status", "stop", "sound-test", "notification-test"), nargs="?", default="run")
     parser.add_argument("--port", type=int, default=19847)
     parser.add_argument("--address")

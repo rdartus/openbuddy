@@ -13,9 +13,6 @@ la carte de compilation du S3 ; le `.bin` produit est dans `dist/s3-qspi/`.
 | ESP32-C6-LCD-1.47 | `waveshare-c6-lcd-147` | ST7789 320×172, microSD |
 | ESP32-S3-Touch-AMOLED-1.64 v2 | `waveshare-s3-amoled-164-v2` | QSPI 456×280, flash interne |
 
-L'ancien profil S3 `waveshare-s3-amoled-164` reste disponible pour la révision
-GPIO9 ; il ne détecte pas automatiquement le câblage de la v2 (GPIO46).
-
 La Waveshare **ESP32-S3-Touch-AMOLED-1.64 v2** dispose aussi d'un profil dedie,
 d'un pilote Python `co5300` et du stockage des animations en flash interne.
 Elle exige un firmware MicroPython personnalise avec **`amoled_qspi` natif** :
@@ -28,8 +25,8 @@ et le stockage, et le [guide firmware QSPI](s3-qspi-build.md) pour l'artefact,
 son hash, le reflashage et le test plein ecran suivi d'un reset avant les animations.
 Ce portage est experimental et reste a valider sur materiel. Les regles C6
 ci-dessous ne changent pas : son firmware reste officiel.
-Attention aux revisions : **v2 = CS GPIO46**, ancien profil = GPIO9. Le build v2
-utilise la flash interne pour le pet, sans acces TF ni repli SD ; voir le guide S3.
+Le profil v2 utilise **CS GPIO46** et la flash interne pour le pet, sans acces
+TF ni repli SD ; voir le guide S3.
 Sur la v2, le QMI8658 utilise SDA=47, SCL=48, adresse `0x6B` et choisit entre les
 deux sens paysage à 180° avec filtrage, sans mode portrait. Mesures sur une carte
 v2 : la gravité est sur Y en paysage (positif avec USB-C à gauche, négatif à

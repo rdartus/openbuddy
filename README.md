@@ -50,9 +50,14 @@ Sur Windows, **sons et notifications visuelles** complètent le compagnon pour l
 permissions, questions, succès et erreurs. `--mute` coupe seulement les sons ;
 `--no-notifications` coupe seulement les notifications Windows.
 
-**Seuls des états et libellés génériques sont transmis** : pas de prompts, code,
-texte de question ou résultats d'outils. Les boutons ne valident aucune autorisation
-automatiquement : les réponses restent dans OpenCode.
+Sur le **S3 v2 tactile**, une question à choix unique ou une permission complète
+apparaît à droite du pet : glisser horizontalement pour changer de proposition,
+toucher pour valider. Le texte trop long défile. Les autres formulaires restent
+à traiter dans OpenCode. Pour une permission, les choix sont **Refuser**,
+**Autoriser une fois** et **Toujours autoriser** ; le dernier enregistre une règle
+persistante. Le C6 n'est pas tactile. Le texte de la demande et les choix sont
+transmis localement au pont et au S3 seulement quand l'écran peut les afficher ;
+aucun contenu d'outil ou prompt libre n'est envoyé.
 
 ## Deux modes, le même compagnon
 
@@ -62,9 +67,10 @@ automatiquement : les réponses restent dans OpenCode.
 | Démarrage du pont | `--serial auto` ou `--serial COMx` | Sans option de transport |
 | Appairage | Aucun | BOOT long, vérification du code, puis **deuxième appui court** |
 | Écran et pet (halo RVB sur C6) | Identiques pour une même carte | Identiques pour une même carte |
-| Boutons et clavier | Pas de remontée des boutons ni de HID sur ce transport | BOOT sert à l'appairage (appui long, puis confirmation du code) ; pas d'événement bouton ni de F13 |
+| Boutons et clavier | Pas de remontée de BOOT ni de HID ; tactile S3 disponible | BOOT sert à l'appairage (appui long, puis confirmation du code) ; tactile S3 disponible |
 
-Le mode USB requiert le **firmware 0.3.0** ou plus (0.4.0 pour le quota). Le firmware conserve aussi le BLE :
+Le mode USB requiert le **firmware 0.3.0** ou plus (0.4.0 pour le quota,
+0.5.0 pour les réponses tactiles S3). Le firmware conserve aussi le BLE :
 le choix du transport se fait au lancement du pont. En USB, un seul outil peut
 utiliser le port série à la fois. En Bluetooth, le buddy accepte un seul hôte à
 la fois. Les autorisations USB/Bluetooth du système restent applicables.
@@ -79,9 +85,6 @@ pas MicroPython : il faut donc préparer la carte une première fois.
 |---|---|---|
 | Waveshare ESP32-C6-LCD-1.47 non tactile | MicroPython officiel `ESP32_GENERIC_C6` 1.29.0 | `waveshare-c6-lcd-147` |
 | Waveshare ESP32-S3-Touch-AMOLED-1.64 **v2** | Build OpenBuddy MicroPython 1.29.0 + `amoled_qspi` API v4, `OPENBUDDY_S3_AMOLED_V2`, PSRAM octale ([guide](docs/s3-qspi-build.md)) | `waveshare-s3-amoled-164-v2` |
-
-L'ancien profil `waveshare-s3-amoled-164` reste disponible pour la revision CS=GPIO9 ;
-ne pas le choisir pour la v2. Le build GitHub cible desormais explicitement la v2.
 
 **Ne pas utiliser le firmware C6 sur le S3**, ni la variante S3 sans PSRAM octale
 pour cette carte S3R8. Vérifier la référence exacte du matériel avant de commencer.
@@ -286,7 +289,8 @@ du firmware S3 v2. Le `.bin` compilé est livré séparément dans `dist/s3-qspi
 | `device/pet_format.py` | Fond noir et format du pack partagés entre PC, C6 et S3 |
 | `device/main.py`, `companion.py` | Démarrage et boucle firmware |
 | `device/buddy_ble.py` | HID, GATT, appairage et clés |
-| `device/buddy_usb.py` | Protocole d'états sur le port série USB |
+| `device/buddy_usb.py` | États et choix tactiles sur le port série USB |
+| `device/ft3168.py`, `buddy_prompt.py` | Tactile et choix affichés sur le S3 v2 |
 | `device/st7789.py`, `co5300.py` | Pilotes écran C6 et S3 (QSPI natif) |
 | `device/buddy_ui.py` | Interface 320×172 C6 / 456×280 S3 ; halo RVB C6 |
 | `device/buddy_protocol.py` | Protocole partagé PC / ESP32 |
@@ -295,7 +299,7 @@ du firmware S3 v2. Le `.bin` compilé est livré séparément dans `dist/s3-qspi
 | `device/orientation_demo.py` | Ancienne démo conservée |
 | `firmware/amoled_qspi/`, `firmware/boards/` | Module C et configuration du firmware S3 |
 | `pc/buddy.py` | Diagnostic BLE et USB en Python |
-| `pc/opencode.py` | Pont événements locaux → BLE/USB, authentifié et en lecture seule |
+| `pc/opencode.py` | Pont événements et choix tactiles → BLE/USB, authentifié localement |
 | `pc/notifications.py` | Sons système Windows non bloquants |
 | `pc/toasts.py` | Notifications Windows natives, sans données privées |
 | `pc/install_plugin.py` | Installation globale/par projet sans modifier la configuration |

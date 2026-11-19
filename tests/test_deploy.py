@@ -99,16 +99,16 @@ class DeployTests(unittest.TestCase):
 
     def test_explicit_s3_profile_is_written_after_files_and_before_reset(self):
         with patch.object(sys, "argv", ["deploy", "--port", "auto", "--board",
-                                       "waveshare-s3-amoled-164"]), \
+                                        "waveshare-s3-amoled-164-v2"]), \
                 patch.object(deploy.subprocess, "run") as run:
             deploy.main()
         preflight, transfer, reset = run.call_args_list
         self.assertIn("from amoled_qspi import Bus", preflight.args[0][-1])
-        self.assertIn("board = 'waveshare-s3-amoled-164'", preflight.args[0][-1])
+        self.assertIn("board = 'waveshare-s3-amoled-164-v2'", preflight.args[0][-1])
         command = transfer.args[0]
         self.assertLess(command.index(":pet_format.py"), command.index(":board_config.py"))
         self.assertIn(":co5300.py", command)
-        self.assertEqual(command[-3:], ["+", "exec", "with open('openbuddy-board.txt', 'w') as f: f.write('waveshare-s3-amoled-164')"])
+        self.assertEqual(command[-3:], ["+", "exec", "with open('openbuddy-board.txt', 'w') as f: f.write('waveshare-s3-amoled-164-v2')"])
         self.assertEqual(reset.args[0][-1], "reset")
 
     def test_update_without_board_preserves_current_profile(self):
@@ -133,7 +133,7 @@ class DeployTests(unittest.TestCase):
         self.assertEqual(reset.args[0][-1], "reset")
 
     def test_missing_native_module_prevents_all_writes_and_still_resets(self):
-        for board in ([], ["--board", "waveshare-s3-amoled-164"]):
+        for board in ([], ["--board", "waveshare-s3-amoled-164-v2"]):
             with self.subTest(board=board), \
                     patch.object(sys, "argv", ["deploy", "--port", "auto"] + board), \
                     patch.object(deploy.subprocess, "run", side_effect=[
@@ -161,9 +161,7 @@ class DeployTests(unittest.TestCase):
         from unittest.mock import Mock
 
         for selected, persisted, requires_native in (
-                ("waveshare-s3-amoled-164", None, True),
                 ("waveshare-s3-amoled-164-v2", None, True),
-                (None, "waveshare-s3-amoled-164\n", True),
                 (None, "waveshare-s3-amoled-164-v2\n", True),
                 (None, "waveshare-c6-lcd-147\n", False),
                 (None, None, False)):

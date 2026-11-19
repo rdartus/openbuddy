@@ -123,7 +123,7 @@ mise à jour des fichiers Python ne peut pas corriger le backend USB du `.bin`.
 
 **Utiliser exactement le profil ci-dessous, avec le suffixe `-v2`.**
 Le déploiement vérifie le module natif avant de copier les fichiers.
-Même si tu avais déjà déployé OpenBuddy, cette commande corrige l’ancien profil GPIO9.
+Cette commande sélectionne explicitement le profil de la carte S3 v2.
 Le pilote accéléré exige **`amoled_qspi.API_VERSION >= 4`** : reflasher d’abord
 le nouveau `.bin` vérifié, sans effacer la flash, puis déployer les fichiers
 Python du même commit. Les `.bin` API v2/v3 et ces fichiers ne sont pas compatibles.

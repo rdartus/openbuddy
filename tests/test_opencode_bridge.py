@@ -59,6 +59,21 @@ class RegistryTests(unittest.TestCase):
             with self.subTest(fields=fields), self.assertRaises(ValueError):
                 self.registry.update(value)
 
+    def test_only_a_current_complete_choice_is_exposed(self):
+        value = message(state="question")
+        value["pending_forms"] = 1
+        value["choice"] = {"kind": "form", "id": "frm_1", "title": "Pick a language",
+                           "options": ["Python", "Rust"]}
+        self.registry.update(value)
+        self.assertEqual(self.registry.current()["choice"], value["choice"])
+        self.now = LEASE_SECONDS
+        self.assertIsNone(self.registry.current())
+        for choice in ({**value["choice"], "title": "x\nspoof"},
+                       {**value["choice"], "options": ["only one"]},
+                       {**value["choice"], "kind": "permission"}):
+            with self.subTest(choice=choice), self.assertRaises(ValueError):
+                self.registry.update({**value, "sequence": 2, "choice": choice})
+
 
 class HTTPTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
@@ -91,7 +106,7 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((status, response), (200, {"accepted": True}))
         status, health = await self.request("GET", "/health")
         self.assertEqual(health["state"]["state"], "thinking")
-        self.assertTrue(health["read_only"])
+        self.assertFalse(health["read_only"])
 
     async def test_unauthorized_and_browser_origin_are_rejected(self):
         self.assertEqual((await self.request(token="wrong"))[0], 401)
@@ -184,7 +199,36 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
     async def test_control_ignores_environment_proxies_for_loopback(self):
         with patch.dict("os.environ", {"http_proxy": "http://127.0.0.1:1", "HTTP_PROXY": "http://127.0.0.1:1", "no_proxy": "", "NO_PROXY": ""}):
             health = await asyncio.to_thread(control, self.path, "health")
-        self.assertTrue(health["read_only"])
+        self.assertFalse(health["read_only"])
+
+    async def test_choice_is_delivered_once_to_the_exact_live_source(self):
+        self.bridge.touch_connected = True
+        value = message(state="permission")
+        value["pending_permissions"] = 1
+        value["choice"] = {"kind": "permission", "id": "per_1",
+                           "title": "Edit file - ALWAYS: *.py", "options": ["REFUSE", "ONCE", "ALWAYS"]}
+        self.assertEqual((await self.request(body=value))[0], 200)
+        self.bridge.device_event({"v": 1, "event": "choice", "kind": "permission", "token": "per_1", "index": 2})
+        status, response = await self.request("GET", "/choice?source=other")
+        self.assertEqual((status, response), (200, {"choice": None, "touch": True}))
+        status, response = await self.request("GET", "/choice?source=project-a")
+        self.assertEqual(response["choice"], {"kind": "permission", "id": "per_1", "index": 2})
+        self.assertEqual((await self.request("GET", "/choice?source=project-a"))[1], {"choice": None, "touch": True})
+        self.bridge.device_event({"v": 1, "event": "choice", "kind": "permission", "token": "wrong", "index": 2})
+        self.assertEqual((await self.request("GET", "/choice?source=project-a"))[1], {"choice": None, "touch": True})
+        health = (await self.request("GET", "/health"))[1]
+        self.assertNotIn("ALWAYS:", json.dumps(health))
+
+    async def test_c6_or_disconnected_touch_drops_choice_text(self):
+        value = message(state="permission")
+        value["pending_permissions"] = 1
+        value["choice"] = {"kind": "permission", "id": "per_2",
+                           "title": "Private path - ALWAYS: *.py", "options": ["REFUSE", "ONCE", "ALWAYS"]}
+        self.assertEqual((await self.request(body=value))[0], 200)
+        self.assertNotIn("choice", self.bridge.registry.current())
+        self.bridge.device_event({"v": 1, "event": "choice", "kind": "permission", "token": "per_2", "index": 2})
+        self.assertEqual((await self.request("GET", "/choice?source=project-a"))[1],
+                         {"choice": None, "touch": False})
 
 
 class CommandLineTests(unittest.TestCase):

@@ -3,7 +3,7 @@ import types
 import unittest
 from unittest.mock import MagicMock, Mock
 
-from test_amoled import load_module
+from test_amoled import board_file, load_module
 
 
 class Clock:
@@ -30,7 +30,7 @@ class Clock:
 
 
 def config(board="waveshare-s3-amoled-164-v2"):
-    return load_module("board_config", open=Mock(return_value=io.StringIO(board)))
+    return load_module("board_config", open=board_file(board))
 
 
 class SensorTests(unittest.TestCase):

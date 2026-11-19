@@ -19,8 +19,9 @@ Un marqueur sauvegardé est prioritaire : sélectionner explicitement
 | QMI8658 I²C SDA / SCL (partagé avec le tactile) | 47 / 48 |
 | SD CLK / MOSI / MISO / CS, bus separe | 41 / 39 / 40 / 38 |
 
-Le profil v2 utilise **CS GPIO46**, 40 MHz comme le constructeur, et le pet
-exclusivement en flash interne.
+Le profil v2 utilise **CS GPIO46**, 40 MHz comme le constructeur. Le pet est
+en flash interne par défaut, ou sur la TF FAT32 après sélection explicite ; le
+firmware natif et les fichiers Python restent en flash.
 Le choix du CS est transmis au module natif (`Bus(cs=...)`, API v4), y compris
 pour liberer correctement la broche apres une erreur ou un reset logiciel.
 
@@ -100,7 +101,7 @@ broches QSPI ni le pilote d'écran pour compenser.
 ne valide pas encore le rendu, la rotation automatique après correction ni les
 redémarrages. Aucun appareil n'est flashé par les tests.
 
-## Stockage sans microSD
+## Stockage : flash interne ou carte TF
 
 Le programme Python est deja en flash interne dans le projet d'origine ; seuls
 les assets d'animation exigeaient la SD. Le pack actuel contient 73 images,
@@ -117,19 +118,24 @@ plus de 10 Mio de marge sur un VFS neuf avec le budget actuel. Les sources WebP 
 la prévisualisation restent sur le PC, pas sur l'ESP32. Aucun pack n'est inclus
 dans le `.bin` ou les artefacts publics.
 
-`--storage auto` consulte le profil et l'espace **effectivement disponible** via
-`os.statvfs`, pas simplement les 16 Mo annonces. **Sur la v2, il impose la flash
-interne et echoue si elle est insuffisante ; aucun repli sur la TF et
-`--storage sd` est refuse.** Sur le C6, il conserve la SD.
-`--storage internal` interdit ce repli et renvoie une erreur si la flash ne suffit
-pas. Les deux modes gardent 256 Kio de reserve avec marge d'allocation et de
-metadonnees ; un remplacement exige conservativement la place d'un pack complet
-supplementaire. Aucun formatage automatique ni nettoyage d'autres donnees.
+Sur la v2, `--storage auto` suit la préférence mémorisée : **flash interne par
+défaut**, TF après une installation explicite avec `--storage sd`. L'installateur
+utilise `os.statvfs` sur la destination choisie (pas simplement les 16 Mo
+annoncés) et conserve 256 Kio de réserve avec marge d'allocation et de
+métadonnées. Une flash insuffisante n'entraîne aucun repli automatique sur la
+TF : choisir `--storage sd` avec une carte FAT32 insérée. Un remplacement exige
+conservativement la place d'un pack complet supplémentaire. Aucun formatage ni
+nettoyage d'autres données. Même en mode TF, il faut 32 Kio disponibles en flash
+pour enregistrer atomiquement la préférence ; ce point est vérifié avant le transfert.
 
-Sur la v2, le lecteur cherche uniquement dans `/openbuddy`, puis utilise le robot
-integre si le pack manque ou est invalide. Meme les nouvelles tentatives de
-chargement ne creent aucun bus SD et ne montent aucune carte TF.
-`status` expose `assets: "internal"`, ainsi que `pet` et `sd`.
+Le choix vérifié est mémorisé dans `openbuddy-storage.txt` sur le S3 **après**
+les SHA-256 et la sélection du pack actif. En mode flash, le lecteur ne crée
+aucun bus TF, même si le pack manque. En mode TF, il monte `/sd` **en lecture
+seule** sur le bus SPI séparé sans toucher au CS QSPI, lit uniquement
+`/sd/openbuddy` et retente le montage si la carte manque ; il affiche alors le
+robot plutôt qu'un ancien pack interne. Une réinstallation avec
+`--storage internal` restaure le choix initial sans supprimer la TF.
+`status` expose `assets: "internal"` ou `"sd"`, `sd` et `pet`.
 
 Les transferts verifies SHA-256 activent la selection en dernier. Une interruption
 d'un remplacement du meme pack peut laisser ce pack incomplet : le lecteur revient
@@ -152,7 +158,8 @@ une mise à jour des seuls fichiers Python utilise `pc.deploy`, sans effacement.
 
 Le [README Windows S3](../README-ESP32-S3-Windows.md#6-installer-le-plugin-et-lancer-openbuddy)
 centralise l'installation du plugin et le lancement du pont USB depuis le depot
-complet. Le pont fonctionne sans appairage ni microSD et doit rester actif.
+complet. Le pont fonctionne sans appairage et sans microSD en mode flash interne ;
+il doit rester actif.
 Un seul programme peut ouvrir le port : arreter le pont avant tout diagnostic,
 deploiement, transfert ou REPL. Voir aussi les
 [evenements OpenCode](opencode-events.md) pour les contraintes de version.
@@ -190,8 +197,8 @@ bornees : les timeouts des outils PC ne debloquent pas un transfert DMA sur la
 carte. Voir le [depannage Windows](../README-ESP32-S3-Windows.md#si-ça-bloque)
 pour les delais des outils et le reset manuel.
 
-Il reste a verifier sur carte : couleurs, sens de rotation, debit, USB/BLE et
-redemarrage a froid sans SD.
+Il reste a verifier sur carte : couleurs, sens de rotation, debit, USB/BLE,
+lecture et rechargement du pet sur TF, et redemarrage a froid avec/sans TF.
 
 Sources constructeur :
 le [depot v2 Waveshare](https://github.com/waveshareteam/ESP32-S3-Touch-AMOLED-1.64-v2),

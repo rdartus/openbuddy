@@ -41,6 +41,14 @@ os.sync()
 os.rename(ASSET_ROOT + "/active.json.tmp", ASSET_ROOT + "/active.json")
 os.sync()
 os.chdir("/")
+if getattr(cfg, "BOARD_MODEL", "") == "waveshare-s3-amoled-164-v2":
+    # Switch the reader only after all assets and the active selection are verified.
+    with open("/openbuddy-storage.txt.tmp", "w") as handle:
+        handle.write(SELECTED_STORAGE)
+        handle.flush()
+    os.sync()
+    os.rename("/openbuddy-storage.txt.tmp", "/openbuddy-storage.txt")
+    os.sync()
 if SELECTED_STORAGE == "sd":
     vfs.umount(cfg.SD_MOUNT)
     sd.deinit()

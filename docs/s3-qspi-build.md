@@ -25,7 +25,8 @@ avec un tampon DMA interne de 4092 octets. L'affichage utilise deux buffers
 persistants de 255360 octets en memoire accessible au heap MicroPython.
 Le partitionnement MicroPython standard est conserve : application avant
 `0x200000`, puis VFS dynamique jusqu'a la fin de la flash, soit **14 Mio** sur
-une carte 16 Mio. Les animations resident dans ce VFS persistant, pas dans la PSRAM.
+une carte 16 Mio. Les animations resident dans ce VFS persistant par défaut,
+ou sur la TF après sélection ; jamais dans la PSRAM.
 
 Le build v2 impose l'USB **Serial/JTAG materiel** (`303a:1001`), sans bascule du PHY
 vers USB OTG/TinyUSB CDC. Le REPL et le protocole JSON utilisent ce meme port ; les
@@ -42,7 +43,7 @@ dans `BUILD.json`. Le retablissement reel du port reste a valider sur la carte.
 Le packaging contrôle la table de partitions réellement compilée, la taille de
 `micropython.bin` dans sa partition et l'absence de débordement du `.bin` combiné
 sur le VFS. Il refuse aussi un budget VFS insuffisant pour les fichiers Python,
-**deux packs v2 de 73 images** (pour permettre un remplacement), les allocations,
+**deux packs v2 de 73 images** (pour permettre un remplacement sans TF), les allocations,
 les métadonnées et une réserve de 256 Kio. Ce contrôle ne remplace pas `statvfs`
 à l'installation sur une carte déjà occupée. Le détail est dans `BUILD.json`.
 
@@ -71,7 +72,8 @@ souhaitée. Il produit un artefact
   application Python. L'identite par defaut v2 est figee dans `openbuddy_build`.
 - `openbuddy-s3-qspi-files.zip` : fichiers Python correspondants, diagnostic et licences.
 - `BUILD.json` : commits, etat sale/propre, empreintes, profil v2, CS=46,
-  flash 16 Mio, `pet_storage: "internal"`, `orientation_sensor: "qmi8658"` et
+  flash 16 Mio, `pet_storage: "internal"` (défaut),
+  `pet_storage_options: ["internal", "sd"]`, `orientation_sensor: "qmi8658"` et
   `flash_budget` (application, VFS, fichiers Python, packs et marges).
 - `BUILD.json` contient aussi `usb_backend: "usb-serial-jtag"`, `usb_vid: 12346`
   et `usb_pid: 4097` (les identifiants `303a:1001` en decimal).
@@ -93,7 +95,8 @@ ni redistribuer de sprites du pet.
 
 Suivre uniquement le **[README Windows ESP32-S3 AMOLED v2](../README-ESP32-S3-Windows.md)**.
 Il centralise le téléchargement de l’artefact, le contrôle du commit et du hash,
-le flashage, le test écran avec reset, les animations internes et le lancement USB.
+le flashage, le test écran avec reset, les animations en flash interne ou sur
+TF et le lancement USB.
 Le dépôt complet du même commit est nécessaire pour le pont et le plugin.
 
 Le VFS commence à `0x200000`. Le `.bin` combiné réécrit la table de partitions ;

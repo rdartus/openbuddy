@@ -100,6 +100,17 @@ if BOARD_MODEL == "waveshare-s3-amoled-164-v2":
     PET_STORAGE = "internal"
     PET_DIRECTORY = "/openbuddy/pets"
     PET_SELECTION = "/openbuddy/active.json"
+    # Only a verified pet installation switches the v2 storage preference.
+    try:
+        with open("openbuddy-storage.txt") as handle:
+            storage = handle.read(16).strip()
+        if storage in ("internal", "sd"):
+            PET_STORAGE = storage
+    except OSError:
+        pass
+    if PET_STORAGE == "sd":
+        PET_DIRECTORY = SD_MOUNT + "/openbuddy/pets"
+        PET_SELECTION = SD_MOUNT + "/openbuddy/active.json"
     AUTO_ORIENTATION = True
     IMU_I2C_ID = 0
     IMU_SDA, IMU_SCL = 47, 48

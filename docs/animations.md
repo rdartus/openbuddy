@@ -4,11 +4,15 @@ Un **même pack RGB565 noir** fonctionne sur C6 et S3 : seul le stockage et
 l'échelle d'affichage dépendent du profil. Les animations peuvent aussi etre
 installees en **flash interne**, sous `/openbuddy/`, avec
 `pc.pet install ... --storage internal`. Le mode par defaut
-`--storage auto` **impose l'interne sur le profil S3 AMOLED v2**, sans acces TF et
-sans repli SD si la flash est pleine ; il conserve la SD sur le profil C6. Une reserve de
-256 Kio et les allocations du filesystem sont comprises dans le controle.
-Le lecteur utilise un pack interne valide en priorite, puis la SD sur le C6,
-puis le robot. Sur la v2, meme un pack absent ou invalide n'entraine aucun acces a la SD.
+`--storage auto` choisit l'interne sur le S3 AMOLED v2 neuf, puis suit la
+destination mémorisée après une installation explicite avec `--storage sd` ou
+`--storage internal`. Il ne bascule pas sur la TF quand la flash est pleine ;
+il conserve la SD sur le C6. Une réserve de 256 Kio et les allocations du
+filesystem sont comprises dans le contrôle. Sur S3 v2, le lecteur accède
+uniquement à la destination choisie ; en mode TF, elle est montée en lecture
+seule sur un bus distinct du QSPI, et une carte absente ramène au robot avec
+de nouvelles tentatives de montage. Sur C6, le pack interne valide garde la
+priorité puis vient la SD.
 Les SHA-256 sont verifies pour
 les deux destinations. Voir le [guide S3](s3-amoled.md) pour l'installation complete.
 
@@ -16,8 +20,9 @@ les deux destinations. Voir le [guide S3](s3-amoled.md) pour l'installation comp
 
 Le firmware lit le pet **Super Saiyan Goku Combat**, partagé par
 **datpham** sur [Codex Pets](https://codex-pets.net/#/pets/super-saiyan-goku-combat).
-Le PC envoie uniquement un état BLE : les images restent sur la SD et continuent
-à s'animer même sans programme PC. `OFFLINE` utilise l'animation de repos.
+Le PC envoie uniquement un état USB ou BLE : les images restent sur le stockage
+choisi et continuent à s'animer même sans programme PC. `OFFLINE` utilise
+l'animation de repos.
 
 - Écran C6 : paysage **320×172**, USB-C à gauche ; S3 AMOLED : **456×280**.
 - Personnage : **96×104** sur C6, agrandi à **192×208** sur S3 ; état et libellé à droite.
@@ -53,9 +58,10 @@ le service BLE. Au démarrage, le montage est tenté 3 fois ; tant que le pet es
 indisponible, le firmware retente toutes les 3 s (puis toutes les 30 s après 20
 essais) et redessine l'écran dès que la carte répond, sans redémarrage.
 
-## Bus SPI partagé
+## Bus SPI partagé sur C6
 
-`shared_spi.py` crée **un seul** objet `machine.SPI`, avec MOSI 6, SCLK 7 et MISO 5.
+Sur C6, `shared_spi.py` crée **un seul** objet `machine.SPI`, avec MOSI 6,
+SCLK 7 et MISO 5.
 Les deux CS sont relevés avant tout changement de fréquence :
 
 | Périphérique | CS | Fréquence |
@@ -71,6 +77,9 @@ callbacks BLE. Les attentes du pilote SD sont bornées.
 **Ne pas utiliser `machine.SDCard` en parallèle de l'écran** : il réserve le
 contrôleur SPI. Il est utilisé seulement par l'installateur USB, une fois la
 démo interrompue et le SPI écran libéré.
+Sur S3, le module QSPI natif garde SPI2_HOST ; la TF utilise son propre bus
+SPI3 et la lecture normale reste en lecture seule. La procédure d'installation
+est uniquement dans le [README Windows S3](../README-ESP32-S3-Windows.md).
 
 ## Conversion sur le PC
 
@@ -111,7 +120,7 @@ puis installer le pack noir : le robot de secours remplace temporairement l'anci
 pet entre les deux opérations. Aucun reflashage du firmware C6 n'est nécessaire.
 Ne jamais reformater la SD pour changer la couleur du fond.
 
-## Installation sur la SD, sans reformatage
+## Installation sur la SD C6, sans reformatage
 
 La SD reste insérée dans l'ESP32. Vérifier le port série avant l'installation :
 

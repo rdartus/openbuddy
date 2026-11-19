@@ -2,7 +2,8 @@
 
 Pour la **Waveshare ESP32-S3-Touch-AMOLED-1.64 v2** : écran 280 × 456,
 CS sur **GPIO46**, flash 16 Mo et PSRAM 8 Mo.
-Le pet sera installé **dans la flash de l’ESP32**, sans carte TF/microSD.
+Le pet peut être installé **dans la flash de l’ESP32 (par défaut)** ou sur une
+**carte TF FAT32** ; le firmware personnalisé reste toujours en flash interne.
 
 **À prévoir :** Windows 10/11, Git, [uv](https://docs.astral.sh/uv/getting-started/installation/),
 OpenCode v2 et un câble USB-C **de données**. Pas besoin de compiler sur Windows,
@@ -70,7 +71,7 @@ Vérifier le commit, le profil et l’empreinte avant de flasher :
 ```powershell
 $Build = Get-Content .\dist\s3-qspi\BUILD.json -Raw | ConvertFrom-Json
 if ($Build.openbuddy_commit -ne (git rev-parse HEAD).Trim() -or $Build.openbuddy_dirty) { throw "Le build ne correspond pas au depot propre" }
-if ($Build.board -ne "waveshare-s3-amoled-164-v2" -or $Build.lcd_cs -ne 46 -or $Build.flash_bytes -ne 16777216 -or $Build.pet_storage -ne "internal" -or $Build.qspi_api_version -ne 4) { throw "Mauvais firmware S3 v2" }
+if ($Build.board -ne "waveshare-s3-amoled-164-v2" -or $Build.lcd_cs -ne 46 -or $Build.flash_bytes -ne 16777216 -or $Build.pet_storage -ne "internal" -or (@($Build.pet_storage_options) -join ',') -ne "internal,sd" -or $Build.qspi_api_version -ne 4) { throw "Mauvais firmware S3 v2" }
 if ($Build.orientation_sensor -ne "qmi8658" -or $Build.flash_budget.vfs_bytes -ne 14680064 -or $Build.flash_budget.spare_vfs_bytes -le 0) { throw "Build sans orientation ou budget flash verifie" }
 if ($Build.usb_backend -ne "usb-serial-jtag" -or $Build.usb_vid -ne 0x303A -or $Build.usb_pid -ne 0x1001) { throw "Ancien build USB : telecharger le firmware Serial/JTAG corrige" }
 $Hash = (Get-FileHash .\dist\s3-qspi\openbuddy-s3-amoled-qspi.bin -Algorithm SHA256).Hash.ToLowerInvariant()
@@ -186,20 +187,46 @@ carte.** Appuyer sur RST, relister les ports comme à l’étape 3, puis reprend
 le déploiement et le test écran de l’étape 4. Un port occupé ou un simple délai
 de réponse USB ne justifie pas un effacement.
 
-## 5. Installer le pet en flash interne
+## 5. Installer le pet en flash interne ou sur la carte TF
 
-Uniquement après un test écran réussi :
+Uniquement après un test écran réussi, convertir le pack commun aux deux cartes :
 
 ```powershell
 uv run python -m pc.pet convert
+```
+
+**Sans carte TF**, installer dans la flash interne (choix par défaut) :
+
+```powershell
 uv run python -m pc.pet install build/pets/super-saiyan-goku-combat-black --port $Port --storage internal
 uv run python -m pc.buddy --serial $Port status
 ```
 
+**Avec carte TF FAT32 insérée**, pour conserver la place en flash sur une
+installation neuve, choisir explicitement la TF :
+
+```powershell
+uv run python -m pc.pet install build/pets/super-saiyan-goku-combat-black --port $Port --storage sd
+uv run python -m pc.buddy --serial $Port status
+```
+
+Le transfert contrôle la place libre sur la destination (dont 256 Kio de réserve
+pour le pack et **32 Kio disponibles en flash** pour mémoriser le choix TF),
+relit les fichiers et vérifie les SHA-256 avant de mémoriser le choix dans
+`openbuddy-storage.txt` sur la flash. **Aucune carte n'est formatée** ; le bus TF
+du S3 est distinct du QSPI de l'écran. Une installation ultérieure avec
+`--storage internal` rebascule sur la flash après vérification, sans effacer le
+pack sur la TF, et inversement. `--storage auto` suit ensuite le dernier choix
+validé ; sur un S3 neuf ou sans marqueur, il choisit la flash et ne bascule pas
+silencieusement sur la TF si la flash est pleine. Si la TF sélectionnée est
+absente ou pleine, l'installation échoue plutôt que de changer de destination.
+Un ancien pack dans l'autre destination n'est jamais supprimé automatiquement.
+La lecture de la TF en fonctionnement normal est **en lecture seule**.
+
 Le pack noir `build/pets/super-saiyan-goku-combat-black` est **le même pour C6
 et S3** : les zones transparentes et les bords semi-transparents sont composités
 sur le fond RGB `(0,0,0)` dès la conversion. Seuls son agrandissement à l'écran
-et sa destination (`--storage internal` sur S3, microSD sur C6) changent. Les
+et sa destination (flash interne ou TF sur S3, microSD sur C6) changent. Les
 anciens packs à fond `(8,12,20)` sont refusés sur les **deux** profils afin
 d'éviter un rectangle visible autour du pet.
 Un ancien pack déjà installé doit être remplacé explicitement en ajoutant
@@ -212,18 +239,20 @@ nouveau `.bin`** : lors
 d'une mise à jour, après installation du pack noir, redéployer les fichiers
 Python de l'étape 4.
 
-Résultat attendu : **`"assets": "internal"`**, **`"sd": false`** et un identifiant
-dans `"pet"`. Le pet n’est pas inclus dans le `.bin` : cette étape le copie en flash
-et vérifie les fichiers. Sur ce profil, aucune carte TF n’est utilisée, même si la
-flash est pleine ou si le pack manque.
+Résultat attendu : **`"assets": "internal", "sd": false`** sans TF, ou
+**`"assets": "sd", "sd": true`** avec TF, et un identifiant dans `"pet"`.
+Si la TF sélectionnée manque au démarrage, le robot remplace le pet et le
+firmware retente périodiquement son montage : il ne lit pas un éventuel ancien
+pack interne à la place. Le pet n’est pas inclus dans le `.bin`.
 
-**Tout tient dans la flash de 16 Mio** sur une installation neuve : 14 Mio sont
-réservés aux fichiers, le pet représente 1 457 664 octets de pixels (environ
-1,50 Mio avec les marges). Le build contrôle les tailles du firmware, des fichiers
+**Le mode sans TF tient dans la flash de 16 Mio** sur une installation neuve :
+14 Mio sont réservés aux fichiers. Le pet représente 1 457 664 octets de pixels
+(environ 1,50 Mio avec les marges). Le build contrôle les tailles du firmware, des fichiers
 Python et de deux packs complets pour permettre le remplacement, plus 256 Kio de
 réserve. Les chiffres exacts sont dans `$Build.flash_budget` et le résumé de
-l’Action. L’installateur vérifie aussi la place réellement libre ; il refuse un
-transfert trop gros sans toucher à la TF ni effacer d’autres fichiers.
+l’Action. Ce budget conservateur s'applique même si le pet est placé sur TF.
+L’installateur vérifie aussi la place réellement libre sur la destination choisie ;
+il refuse un transfert trop gros sans effacer d’autres fichiers.
 
 Le `status` doit aussi montrer `"imu": true` et l’`"orientation"` courante
 après initialisation du capteur ; au tout début, `"imu": false` peut encore
@@ -318,7 +347,9 @@ Sans événement d’OpenCode, l’état `OFFLINE` est normal.
   **`waveshare-s3-amoled-164-v2`**, l'API v4 et le commit identique pour le `.bin`
   et les fichiers Python, puis le test de l’étape 4. Les anciennes marges autour
   de l'interface 320 × 172 ne sont plus attendues.
-- **Pas de pet** : vérifier le résultat de l’étape 5, sans ajouter de carte TF.
+- **Pas de pet** : vérifier `assets` et `sd` dans `status`, la destination choisie
+  à l'étape 5 et, en mode TF, l'insertion et le format FAT32 de la carte. Ne pas
+  reformater la carte automatiquement ni effacer la flash pour ce diagnostic.
 - **BLE indisponible au démarrage** : le compagnon reste utilisable par USB et
   BOOT court conserve la rotation. Le détail est dans `openbuddy-error.txt`, avec
   `Stage: BLE` ; le BLE sera retenté au prochain démarrage.

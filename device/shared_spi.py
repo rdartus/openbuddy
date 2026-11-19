@@ -7,7 +7,9 @@ import board_config as cfg
 
 class SharedSPI:
     def __init__(self, sd_only=False):
-        self.lcd_cs = Pin(cfg.LCD_CS, Pin.OUT, value=1)
+        # The S3 QSPI display owns its CS; the separate TF bus must not touch it.
+        self.lcd_cs = (None if sd_only and cfg.DISPLAY_DRIVER == "co5300" else
+                       Pin(cfg.LCD_CS, Pin.OUT, value=1))
         self.sd_cs = Pin(cfg.SD_CS, Pin.OUT, value=1)
         self.sd_only = sd_only
         self.baudrate = cfg.SD_SPI_BAUD if sd_only else cfg.LCD_SPI_BAUD
@@ -18,7 +20,8 @@ class SharedSPI:
                        miso=Pin(cfg.SD_MISO))
 
     def configure(self, baudrate):
-        self.lcd_cs(1)
+        if self.lcd_cs is not None:
+            self.lcd_cs(1)
         self.sd_cs(1)
         if self.baudrate != baudrate:
             self.spi.init(baudrate=baudrate, polarity=0, phase=0)

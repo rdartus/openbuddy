@@ -10,6 +10,15 @@ from unittest.mock import Mock, patch
 FIRMWARE = Path(__file__).resolve().parents[1] / "device"
 
 
+def board_file(board):
+    def open_marker(name):
+        if name == "openbuddy-board.txt":
+            return io.StringIO(board + "\n")
+        raise OSError("no storage preference")
+
+    return Mock(side_effect=open_marker)
+
+
 def load_module(name, dependencies=None, directory=FIRMWARE, **overrides):
     dependencies = dependencies or {}
     spec = importlib.util.spec_from_file_location("_amoled_test_" + name, directory / (name + ".py"))
@@ -29,8 +38,7 @@ class AMOLEDTests(unittest.TestCase):
     BOARD = "waveshare-s3-amoled-164-v2"
 
     def setUp(self):
-        cfg = load_module("board_config", open=Mock(return_value=io.StringIO(
-            self.BOARD + "\n")))
+        cfg = load_module("board_config", open=board_file(self.BOARD))
         self.cfg = cfg
         self.pins = {}
         self.events = []

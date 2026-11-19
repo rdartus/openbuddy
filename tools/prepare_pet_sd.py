@@ -34,10 +34,8 @@ def capacity(path):
 
 
 SELECTED_STORAGE = STORAGE
-if getattr(cfg, "PET_STORAGE", "auto") == "internal":
-    if STORAGE == "sd":
-        raise ValueError("This board profile requires internal flash; SD storage is disabled")
-    SELECTED_STORAGE = "internal"
+if STORAGE == "auto" and getattr(cfg, "PET_STORAGE", "auto") in ("internal", "sd"):
+    SELECTED_STORAGE = cfg.PET_STORAGE
 elif STORAGE == "auto":
     model = str(getattr(cfg, "BOARD_MODEL", "")).upper()
     prefer_internal = (bool(model) and "C6" not in model
@@ -45,6 +43,13 @@ elif STORAGE == "auto":
     SELECTED_STORAGE = "internal" if prefer_internal and capacity("/") else "sd"
     if prefer_internal and SELECTED_STORAGE == "sd":
         print("Insufficient internal flash; falling back to SD")
+if (getattr(cfg, "BOARD_MODEL", "") == "waveshare-s3-amoled-164-v2"
+        and SELECTED_STORAGE == "sd"):
+    # The TF holds the pack, but the verified choice still needs a tiny
+    # atomic marker on the internal VFS. Fail before transferring any assets.
+    flash = os.statvfs("/")
+    if (flash[1] or flash[0]) * flash[4] < 32 * 1024:
+        raise ValueError("Insufficient internal flash for the TF storage preference (32 KiB required)")
 if SELECTED_STORAGE == "internal":
     if not capacity("/"):
         raise ValueError("Insufficient internal flash space (including 256 KiB reserve)")
@@ -54,7 +59,8 @@ else:
         import vfs
         from machine import Pin, SDCard, SPI
 
-        Pin(cfg.LCD_CS, Pin.OUT, value=1)
+        if getattr(cfg, "DISPLAY_DRIVER", "") != "co5300":
+            Pin(cfg.LCD_CS, Pin.OUT, value=1)
         Pin(cfg.SD_CS, Pin.OUT, value=1)
         spi_id = getattr(cfg, "SD_SPI_ID", cfg.LCD_SPI_ID)
         sclk = getattr(cfg, "SD_SCLK", cfg.LCD_SCLK)

@@ -6,7 +6,8 @@ et **S3-Touch-AMOLED-1.64 v2** (écran paysage 456×280). Le pet animé et l'ét
 sont synchronisés en **Local USB** ou en **Bluetooth**.
 
 Portage **Waveshare ESP32-S3-Touch-AMOLED-1.64 v2 (280x456, CS GPIO46, 16 Mo flash,
-8 Mo PSRAM)** : pet **en flash interne, sans microSD ni repli TF**, avec un firmware
+8 Mo PSRAM)** : pet **en flash interne par défaut ou sur TF FAT32 sélectionnée
+explicitement**, sans repli automatique, avec un firmware
 experimental integrant le module natif **`amoled_qspi`**, pas le `.bin` MicroPython
 officiel. **[Installation Windows ESP32-S3 : suivre ce README](README-ESP32-S3-Windows.md).**
 Le QMI8658 choisit automatiquement entre les deux sens paysage à 180°, sans mode
@@ -30,7 +31,7 @@ OpenCode v2 → plugin d'événements → pont Python local → Local USB ou Blu
 Le plugin écoute les **événements OpenCode v2**, suit les sessions et les demandes
 en attente, puis transmet un état au pont Python. Le pont envoie cet état au buddy ;
 le firmware choisit l'écran, l'accent coloré (halo RVB sur C6) et l'animation
-lue sur microSD C6 ou flash interne S3.
+lue sur microSD C6, ou sur flash interne / TF S3 selon l'installation.
 Les images ne sont pas envoyées en continu par le transport.
 
 | Dans OpenCode | Sur OpenBuddy |
@@ -89,7 +90,7 @@ pas MicroPython : il faut donc préparer la carte une première fois.
 **Ne pas utiliser le firmware C6 sur le S3**, ni la variante S3 sans PSRAM octale
 pour cette carte S3R8. Vérifier la référence exacte du matériel avant de commencer.
 
-Pour le **S3 AMOLED v2, sans microSD**, suivre uniquement le
+Pour le **S3 AMOLED v2, avec ou sans microSD**, suivre uniquement le
 **[README Windows ESP32-S3](README-ESP32-S3-Windows.md)** : preparation du PC,
 telechargement du build, flashage, test ecran, pet en flash et lancement USB.
 Ce parcours s'applique aussi si MicroPython officiel est deja flashe.
@@ -243,7 +244,8 @@ uv run python -m pc.opencode stop
 ## Pet et matériel
 
 Le pet est lu sur la **microSD ou la flash interne**, en RGB565, avec un seul buffer d'image en RAM.
-Sur le S3 AMOLED, l'installation peut se faire entièrement sans microSD.
+Sur le S3 AMOLED, l'installation peut se faire entièrement sans microSD ou
+mettre le pet sur la TF en gardant les fichiers Python en flash.
 Sans pack installé, un robot intégré prend le relais. Les sprites et les packs
 du pet ne sont pas fournis dans le dépôt ou les kits : les visuels ci-dessus sont
 une démonstration de l'affichage, pas un pack d'assets. Le bouton BOOT (appui court)

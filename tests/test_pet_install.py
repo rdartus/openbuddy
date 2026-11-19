@@ -148,18 +148,70 @@ class InstallerTests(unittest.TestCase):
         self.device.machine.Pin.assert_not_called()
         self.device.vfs.mount.assert_not_called()
 
-    def test_v2_insufficient_flash_or_explicit_sd_fails_before_hardware_and_writes(self):
-        for storage, free, message in (("auto", 0, "Insufficient internal flash"),
-                                       ("sd", 8 * 1024 * 1024, "requires internal flash")):
-            with self.subTest(storage=storage):
-                self.device.cfg.PET_STORAGE = "internal"
-                self.device.env["STORAGE"] = storage
-                self.device.free["/"] = free
-                with self.assertRaisesRegex(ValueError, message):
-                    self.device.run(PREPARE)
+    def test_v2_auto_insufficient_flash_fails_without_sd_fallback(self):
+        self.device.cfg.PET_STORAGE = "internal"
+        self.device.free["/"] = 0
+        with self.assertRaisesRegex(ValueError, "Insufficient internal flash"):
+            self.device.run(PREPARE)
         self.device.os.mkdir.assert_not_called()
         self.device.machine.Pin.assert_not_called()
         self.device.vfs.mount.assert_not_called()
+
+    def test_v2_explicit_tf_install_uses_no_internal_pack_space_and_switches_only_after_verification(self):
+        self.device.cfg.BOARD_MODEL = "waveshare-s3-amoled-164-v2"
+        self.device.cfg.PET_STORAGE = "internal"
+        self.device.free["/"] = 32 * 1024
+        self.device.env["STORAGE"] = "sd"
+        self.transfer()
+        self.assertEqual(self.device.env["ASSET_ROOT"], "/sd/openbuddy")
+        self.assertFalse(self.device.path("/openbuddy-storage.txt").exists())
+        self.device.run(VERIFY)
+        self.assertEqual(self.device.path("/openbuddy-storage.txt").read_text(), "sd")
+        self.assertFalse(self.device.path("/openbuddy").exists())
+
+    def test_v2_auto_follows_saved_tf_preference_and_internal_install_switches_back(self):
+        self.device.cfg.BOARD_MODEL = "waveshare-s3-amoled-164-v2"
+        self.device.cfg.PET_STORAGE = "sd"
+        self.device.free["/"] = 32 * 1024
+        self.transfer()
+        self.assertEqual(self.device.env["SELECTED_STORAGE"], "sd")
+        self.device.run(VERIFY)
+        self.assertEqual(self.device.path("/openbuddy-storage.txt").read_text(), "sd")
+        with tempfile.TemporaryDirectory() as temporary:
+            device = Device(Path(temporary), model="waveshare-s3-amoled-164-v2")
+            device.cfg.PET_STORAGE = "sd"
+            device.env["STORAGE"] = "internal"
+            original = self.device
+            self.device = device
+            try:
+                self.transfer()
+            finally:
+                self.device = original
+            device.run(VERIFY)
+            self.assertEqual(device.path("/openbuddy-storage.txt").read_text(), "internal")
+            device.vfs.mount.assert_not_called()
+
+    def test_v2_failed_tf_verification_keeps_previous_preference(self):
+        self.device.cfg.BOARD_MODEL = "waveshare-s3-amoled-164-v2"
+        self.device.cfg.PET_STORAGE = "internal"
+        self.device.env["STORAGE"] = "sd"
+        self.device.path("/openbuddy-storage.txt").write_text("internal")
+        self.transfer()
+        self.device.path("idle.rgb565").write_bytes(b"corrupt")
+        with self.assertRaisesRegex(ValueError, "size mismatch"):
+            self.device.run(VERIFY)
+        self.assertEqual(self.device.path("/openbuddy-storage.txt").read_text(), "internal")
+
+    def test_v2_tf_requires_room_for_marker_before_accessing_card(self):
+        self.device.cfg.BOARD_MODEL = "waveshare-s3-amoled-164-v2"
+        self.device.cfg.PET_STORAGE = "internal"
+        self.device.env["STORAGE"] = "sd"
+        self.device.free["/"] = 0
+        with self.assertRaisesRegex(ValueError, "32 KiB required"):
+            self.device.run(PREPARE)
+        self.device.machine.Pin.assert_not_called()
+        self.device.vfs.mount.assert_not_called()
+        self.device.os.mkdir.assert_not_called()
 
     def test_s3_sd_uses_separate_pins_and_native_slot_two(self):
         self.device.cfg.SD_SPI_ID = 2
@@ -177,6 +229,7 @@ class InstallerTests(unittest.TestCase):
         self.assertIn(39, pin_numbers)
         self.assertNotIn(10, pin_numbers)
         self.assertNotIn(11, pin_numbers)
+        self.assertNotIn(14, pin_numbers)
 
     def test_auto_insufficient_flash_without_sd_fails_before_writes(self):
         self.device.free["/"] = 0

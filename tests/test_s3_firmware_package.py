@@ -130,6 +130,7 @@ class S3FirmwarePackageTests(unittest.TestCase):
             "micropython_board": "OPENBUDDY_S3_AMOLED_V2",
             "flash_bytes": 16 * 1024 * 1024,
             "pet_storage": "internal",
+            "pet_storage_options": ["internal", "sd"],
             "lcd_cs": 46,
             "qspi_api_version": 4,
             "orientation_sensor": "qmi8658",

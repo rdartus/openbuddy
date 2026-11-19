@@ -45,8 +45,12 @@ class Storage:
         """Use a valid local pack first, without probing an absent SD card."""
         from pet_player import PetPlayer
 
-        roots = (("/openbuddy",) if cfg.PET_STORAGE == "internal" else
-                 ("/openbuddy", cfg.SD_MOUNT + "/openbuddy"))
+        if cfg.PET_STORAGE == "internal":
+            roots = ("/openbuddy",)
+        elif cfg.PET_STORAGE == "sd":
+            roots = (cfg.SD_MOUNT + "/openbuddy",)
+        else:
+            roots = ("/openbuddy", cfg.SD_MOUNT + "/openbuddy")
         for root in roots:
             if root.startswith(cfg.SD_MOUNT + "/"):
                 if not self.mounted and not self.mount(attempts=attempts):

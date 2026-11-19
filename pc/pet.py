@@ -243,7 +243,7 @@ def main():
     installation.add_argument("pack")
     installation.add_argument("--port", default="auto")
     installation.add_argument("--storage", choices=("auto", "sd", "internal"), default="auto",
-                              help="Follow the board policy by default; S3 AMOLED v2 requires internal flash")
+                               help="Follow the board preference by default; S3 v2 can use internal flash or TF")
     installation.add_argument("--replace", action="store_true", help="Replace an existing OpenBuddy pack")
     installation.add_argument("--timeout", type=int, default=INSTALL_TIMEOUT, metavar="SECONDS",
                               help="Maximum install duration (default: %(default)s seconds)")

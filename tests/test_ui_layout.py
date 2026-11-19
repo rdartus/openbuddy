@@ -12,6 +12,12 @@ from unittest.mock import Mock, patch
 FIRMWARE = Path(__file__).resolve().parents[1] / "device"
 
 
+def board_file(name, board):
+    if name == "openbuddy-board.txt":
+        return io.StringIO(board)
+    raise OSError("no storage preference")
+
+
 def load(name):
     spec = importlib.util.spec_from_file_location("_ui_test_" + name, FIRMWARE / (name + ".py"))
     module = importlib.util.module_from_spec(spec)
@@ -38,7 +44,7 @@ class BoundedDisplay:
 
 class UILayoutTests(unittest.TestCase):
     def test_s3_prompt_scrolls_inside_right_panel_without_blocking_approval(self):
-        with patch("builtins.open", return_value=io.StringIO("waveshare-s3-amoled-164-v2")):
+        with patch("builtins.open", side_effect=lambda name: board_file(name, "waveshare-s3-amoled-164-v2")):
             cfg = load("board_config")
         driver = types.SimpleNamespace(rgb=lambda r, g, b: (r << 16) | (g << 8) | b)
         with patch.dict(sys.modules, {"board_config": cfg, "st7789": driver}):
@@ -68,7 +74,7 @@ class UILayoutTests(unittest.TestCase):
                        cfg.UI_WIDTH - cfg.UI_TEXT_X + 4, 1), display.calls)
 
     def test_s3_request_and_choice_marquees_fit_without_page_counters(self):
-        with patch("builtins.open", return_value=io.StringIO("waveshare-s3-amoled-164-v2")):
+        with patch("builtins.open", side_effect=lambda name: board_file(name, "waveshare-s3-amoled-164-v2")):
             cfg = load("board_config")
         driver = types.SimpleNamespace(rgb=lambda r, g, b: (r << 16) | (g << 8) | b)
         with patch.dict(sys.modules, {"board_config": cfg, "st7789": driver}):
@@ -108,7 +114,7 @@ class UILayoutTests(unittest.TestCase):
 
     def test_marquee_moves_right_to_left_and_short_text_stays_still(self):
         driver = types.SimpleNamespace(rgb=lambda r, g, b: (r << 16) | (g << 8) | b)
-        with patch("builtins.open", return_value=io.StringIO("waveshare-s3-amoled-164-v2")):
+        with patch("builtins.open", side_effect=lambda name: board_file(name, "waveshare-s3-amoled-164-v2")):
             cfg = load("board_config")
         with patch.dict(sys.modules, {"st7789": driver, "board_config": cfg}):
             ui_module = load("buddy_ui")
@@ -128,7 +134,7 @@ class UILayoutTests(unittest.TestCase):
         self.assertNotIn(".ljust(", source)  # Absent from MicroPython str on the S3.
 
     def test_s3_marquee_overwrites_text_without_blanking_it_first(self):
-        with patch("builtins.open", return_value=io.StringIO("waveshare-s3-amoled-164-v2")):
+        with patch("builtins.open", side_effect=lambda name: board_file(name, "waveshare-s3-amoled-164-v2")):
             cfg = load("board_config")
         driver = types.SimpleNamespace(rgb=lambda r, g, b: (r << 16) | (g << 8) | b)
         with patch.dict(sys.modules, {"board_config": cfg, "st7789": driver}):
@@ -154,7 +160,7 @@ class UILayoutTests(unittest.TestCase):
     def test_all_states_and_pairing_fit_both_panels_with_and_without_pet(self):
         driver = types.SimpleNamespace(rgb=lambda r, g, b: (r << 16) | (g << 8) | b)
         for marker in ("waveshare-c6-lcd-147", "waveshare-s3-amoled-164-v2"):
-            with self.subTest(board=marker), patch("builtins.open", return_value=io.StringIO(marker)):
+            with self.subTest(board=marker), patch("builtins.open", side_effect=lambda name: board_file(name, marker)):
                 cfg = load("board_config")
             with patch.dict(sys.modules, {"board_config": cfg, "st7789": driver}):
                 ui_module = load("buddy_ui")

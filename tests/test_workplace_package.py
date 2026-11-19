@@ -36,6 +36,7 @@ class PackageTests(unittest.TestCase):
             self.assertEqual(hashlib.sha256(archive.read(prefix + name)).hexdigest(), digest)
         self.assertIn(prefix + "README.md", names)
         self.assertIn(prefix + "pc/notifications.py", names)
+        self.assertIn(prefix + "pc/attention.py", names)
         self.assertEqual(len(names), len(files_for(variant)) + 3)
         return prefix, names
 

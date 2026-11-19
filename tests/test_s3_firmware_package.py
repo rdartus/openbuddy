@@ -39,12 +39,22 @@ LINK_MAP = ("usermod/amoled_qspi.c.obj\n"
 class S3USBBoardTests(unittest.TestCase):
     def test_release_artifacts_do_not_overlap_firmware_sources(self):
         workflow = (packager.ROOT / ".github/workflows/s3-qspi.yml").read_text(encoding="utf-8")
-        self.assertIn("- 'device/**'", workflow)
-        self.assertIn("- 'firmware/**'", workflow)
         self.assertIn("path: dist/s3-qspi", workflow)
         self.assertIn('gh release create "$TAG" dist/s3-qspi/*', workflow)
         self.assertNotIn('gh release create "$TAG" device/*', workflow)
         self.assertNotIn('gh release create "$TAG" firmware/*', workflow)
+
+    def test_build_runs_on_all_branches_and_packages_the_pr_head(self):
+        workflow = (packager.ROOT / ".github/workflows/s3-qspi.yml").read_text(encoding="utf-8")
+        triggers = workflow.split("permissions:", 1)[0]
+        self.assertIn("  pull_request:\n", triggers)
+        self.assertIn("    branches: ['**']", triggers)
+        self.assertIn("    tags: ['s3-qspi-*']", triggers)
+        self.assertNotIn("    paths:", triggers)
+        self.assertEqual(workflow.count("ref: ${{ github.event.pull_request.head.sha || github.sha }}"), 2)
+        self.assertIn("assert build['openbuddy_commit'] == os.environ['EXPECTED_COMMIT']", workflow)
+        self.assertIn("assert not build['openbuddy_dirty']", workflow)
+        self.assertIn("sha256sum --check SHA256SUMS.txt", workflow)
 
     @unittest.skipUnless(shutil.which("cc"), "A host C preprocessor is not available")
     def test_board_explicitly_keeps_the_hardware_usb_serial_jtag_phy(self):

@@ -21,6 +21,7 @@ FILES = {
     "pc/__init__.py": "pc/__init__.py",
     "pc/buddy.py": "pc/buddy.py",
     "pc/opencode.py": "pc/opencode.py",
+    "pc/attention.py": "pc/attention.py",
     "pc/notifications.py": "pc/notifications.py",
     "pc/toasts.py": "pc/toasts.py",
     "pc/quota.py": "pc/quota.py",

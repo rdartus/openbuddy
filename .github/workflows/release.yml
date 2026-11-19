@@ -48,7 +48,14 @@ jobs:
       - name: Check deployable files with MicroPython 1.29
         run: python -m tools.check_micropython
       - name: Build standalone plugin
-        run: npm --prefix integration/openbuddy run build
+        run: |
+          npm --prefix integration/openbuddy run build
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          foreach ($file in @('index.js', 'package.json', 'LICENSES.txt')) {
+            if ((Get-FileHash "integration/openbuddy/dist/$file").Hash -ne (Get-FileHash "plugin/openbuddy/$file").Hash) {
+              throw "The committed plugin/openbuddy/$file does not match the built plugin"
+            }
+          }
       - name: Python tests
         run: python -m unittest discover -s tests -v
       - name: Plugin tests

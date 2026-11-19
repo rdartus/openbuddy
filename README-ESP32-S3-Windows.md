@@ -21,7 +21,7 @@ les réponses aux demandes OpenCode. L’axe Y et son signe ont
 Si tu n’as pas encore le dépôt :
 
 ```powershell
-git clone --branch orientation https://github.com/rdartus/openbuddy.git
+git clone --branch master https://github.com/rdartus/openbuddy.git
 Set-Location openbuddy
 ```
 
@@ -30,16 +30,15 @@ Si tu as déjà le dépôt, ouvre PowerShell dans son dossier et mets-le à jour
 ```powershell
 git status --short
 git fetch origin
-git switch orientation
-git pull --ff-only origin orientation
+git switch master
+git pull --ff-only origin master
 ```
 
 Si Git affiche des modifications locales ou une divergence, ne les efface pas :
-résous-les avant de poursuivre.
-Si tu testes un artefact produit sur une autre branche de travail déjà présente
-dans ton dépôt, conserve cette branche plutôt que de passer à `orientation` :
-le **commit** du dépôt doit toujours être celui de l’artefact, comme vérifié
-à l’étape 2.
+résous-les avant de poursuivre. Pour un artefact issu d'une autre branche,
+utilise **cette branche** à la place de `master` dans `clone`, `switch` et `pull` ;
+ne change pas de branche après le téléchargement. Le **commit** local doit
+toujours être celui inscrit dans l'artefact, comme vérifié à l'étape 2.
 
 Préparer Python, sans activer de venv ni demander de droits administrateur :
 
@@ -52,9 +51,10 @@ uv pip install --python .venv\Scripts\python.exe -r pc\requirements.txt -r pc\re
 ## 2. Télécharger le firmware compilé
 
 1. Ouvrir les [GitHub Actions du dépôt](https://github.com/rdartus/openbuddy/actions/workflows/s3-qspi.yml).
-2. Choisir **Build S3 AMOLED v2 QSPI firmware**, sur la branche
-   `orientation` (ou ta branche de travail), pour **le même commit que ton dépôt**
-   (`git rev-parse HEAD`).
+2. Choisir **Build S3 AMOLED v2 QSPI firmware**, sur `master` ou la branche
+   utilisée à l'étape 1, pour **le même commit que ton dépôt**
+   (`git rev-parse HEAD`). Les builds de pull request utilisent le commit de
+   la branche proposée, pas le commit de fusion temporaire de GitHub.
 3. Attendre la réussite de l’exécution, puis télécharger l’artefact
    **`openbuddy-s3-amoled-qspi`** en bas de sa page. Se connecter à GitHub si nécessaire.
 4. Extraire son contenu dans **`dist\s3-qspi`**, à la racine du dépôt.

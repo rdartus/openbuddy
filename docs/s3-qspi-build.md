@@ -56,11 +56,15 @@ distribuee avec le firmware.
 
 ## GitHub Actions
 
-Le workflow **Build S3 AMOLED v2 QSPI firmware** compile sur les pushes vers `master`
-ou `feat/esp32-s3-amoled-164`, ainsi que sur la branche `orientation`, et les pull
-requests modifiant les sources concernees.
-Il peut aussi etre lance manuellement
-une fois disponible sur la branche par defaut. Il produit un artefact
+Le workflow **Build S3 AMOLED v2 QSPI firmware** compile sur chaque push vers
+`master` **ou toute autre branche**, sur chaque pull request et sur les tags
+`s3-qspi-*`, même si seuls des fichiers de documentation ont changé : ainsi
+chaque commit testé possède son propre artefact et aucun contrôle requis de PR
+ne reste en attente à cause d'un filtre de chemins. Sur une PR, les tests et
+le build portent sur le commit de la branche proposée, **pas** sur le commit
+de fusion temporaire créé par GitHub. Il peut aussi être lancé manuellement
+une fois disponible sur la branche par défaut, en sélectionnant la branche
+souhaitée. Il produit un artefact
 `openbuddy-s3-amoled-qspi` conserve 30 jours :
 
 - `openbuddy-s3-amoled-qspi.bin` : MicroPython avec le module natif **API v4**, sans
@@ -73,6 +77,10 @@ une fois disponible sur la branche par defaut. Il produit un artefact
   et `usb_pid: 4097` (les identifiants `303a:1001` en decimal).
 - `SHA256SUMS.txt` : empreintes des fichiers livres.
 - `INSTALL.md` : le README Windows S3, également inclus dans le ZIP des sources.
+
+La CI vérifie que `BUILD.json.openbuddy_commit` correspond au commit construit,
+que les sources sont propres et que `SHA256SUMS.txt` correspond aux fichiers
+livrés. Les fichiers Python et le firmware doivent provenir de ce même commit.
 
 Un tag pousse **`s3-qspi-*`** publie automatiquement une **prerelease**, uniquement
 apres la compilation reussie. Le workflow n'ecrase pas une release existante.

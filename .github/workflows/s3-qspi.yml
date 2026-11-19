@@ -3,35 +3,9 @@ name: Build S3 AMOLED v2 QSPI firmware
 on:
   workflow_dispatch:
   pull_request:
-    paths:
-      - '.github/workflows/s3-qspi.yml'
-      - 'README-ESP32-S3-Windows.md'
-      - 'firmware/**'
-      - 'device/**'
-      - 'pc/**'
-      - 'tests/**'
-      - 'tools/**'
-      - 'docs/s3-*.md'
-      - 'docs/windows-uv-apres-flash.md'
-      - 'docs/windows-local-qspi.md'
-      - 'THIRD_PARTY.md'
-      - 'integration/openbuddy/**'
   push:
-    branches: ['master', 'feat/esp32-s3-amoled-164', 'orientation']
+    branches: ['**']
     tags: ['s3-qspi-*']
-    paths:
-      - '.github/workflows/s3-qspi.yml'
-      - 'README-ESP32-S3-Windows.md'
-      - 'firmware/**'
-      - 'device/**'
-      - 'pc/**'
-      - 'tests/**'
-      - 'tools/**'
-      - 'docs/s3-*.md'
-      - 'docs/windows-uv-apres-flash.md'
-      - 'docs/windows-local-qspi.md'
-      - 'THIRD_PARTY.md'
-      - 'integration/openbuddy/**'
 
 permissions:
   contents: read
@@ -45,7 +19,11 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
+      # Use the PR head, not GitHub's synthetic merge commit: the packaged
+      # firmware must match a commit users can check out on their branch.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: '3.13'
@@ -61,6 +39,9 @@ jobs:
       - name: Build and verify plugin
         run: |
           npm --prefix integration/openbuddy run build
+          cmp integration/openbuddy/dist/index.js plugin/openbuddy/index.js
+          cmp integration/openbuddy/dist/package.json plugin/openbuddy/package.json
+          cmp integration/openbuddy/dist/LICENSES.txt plugin/openbuddy/LICENSES.txt
           npm --prefix integration/openbuddy test
           npm --prefix integration/openbuddy run typecheck
       - name: Test Python deployment and firmware package
@@ -83,6 +64,8 @@ jobs:
         shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Configure Git safe directory
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
       - name: Fetch MicroPython sources
@@ -95,6 +78,20 @@ jobs:
         run: |
           . /opt/esp/idf/export.sh
           bash tools/build_s3_qspi.sh /tmp/micropython
+      - name: Verify artifact provenance and checksums
+        env:
+          EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          build = json.loads(Path('dist/s3-qspi/BUILD.json').read_text())
+          assert build['openbuddy_commit'] == os.environ['EXPECTED_COMMIT'], 'Build commit mismatch'
+          assert not build['openbuddy_dirty'], 'Build includes uncommitted sources'
+          PY
+          cd dist/s3-qspi
+          sha256sum --check SHA256SUMS.txt
       - name: Summarize internal flash capacity
         run: |
           python - <<'PY'

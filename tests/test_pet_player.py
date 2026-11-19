@@ -68,6 +68,14 @@ class PlayerTests(unittest.TestCase):
                           [b"\xf8\x00" * 4, b"\x00\x1f" * 4, b"\xf8\x00" * 4])
         self.assertEqual(self.lcd.frames[0][1:], (59, 86, 2, 2, 1))
 
+    def test_existing_pack_without_standby_uses_idle_without_reinstallation(self):
+        self.manifest["states"].pop("standby")
+        self.save_manifest()
+        player = self.player()
+        self.assertTrue(player.available)
+        self.assertTrue(player.draw("standby", 0))
+        self.assertEqual(self.lcd.frames[-1][0], b"\xf8\x00" * 4)
+
     def test_s3_profile_scales_pet_without_changing_pack_or_frame_buffer(self):
         with patch.object(pet_player.cfg, "UI_PET_SCALE", 2), \
                 patch.object(pet_player.cfg, "UI_PET_STAGE", (8, 36, 208, 208)):

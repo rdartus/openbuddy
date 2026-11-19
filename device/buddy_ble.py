@@ -390,6 +390,11 @@ class BuddyBLE:
         if event is not None and self.secure:
             self._send(event)
 
+    def navigate(self, step):
+        event = self.prompt.navigate(step)
+        if event is not None and self.secure:
+            self._send(event)
+
     def tick(self, now):
         self.bonds.save()
         if self.hid_until is not None and time.ticks_diff(now, self.hid_until) >= 0:

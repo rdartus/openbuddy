@@ -317,10 +317,20 @@ Installer aussi `pc/requirements-assets.txt` pour Pillow et les outils de déplo
 Les tests n'accèdent pas au matériel et n'exigent pas les images Goku :
 
 ```powershell
+uv pip install --python .venv\Scripts\python.exe -r pc\requirements-dev.txt
+uv run python -m tools.check_micropython
 uv run python -m unittest discover -s tests -v
 npm --prefix integration/openbuddy test
 npm --prefix integration/openbuddy run typecheck
 ```
+
+Le contrôle MicroPython utilise obligatoirement `mpy-cross` **1.29.0** sur tous
+les fichiers installés par `pc.deploy` ; un compilateur absent, une syntaxe
+incompatible ou une API/importation Python non portable connue fait échouer les
+tests. La CI Linux exécute aussi le protocole et les choix sur le port Unix de
+MicroPython 1.29. Les mocks CPython ne suffisent
+donc plus à faire passer ces régressions, mais ni ces contrôles ni le port Unix ne
+remplacent les tests réels sur ESP32 (matériel, BLE, écran et module QSPI natif).
 
 Node/npm est utilisé uniquement pour développer/reconstruire le plugin :
 `npm --prefix integration/openbuddy ci`, puis `npm --prefix integration/openbuddy run build`.

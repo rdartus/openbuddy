@@ -210,7 +210,7 @@ def run():
             active = usb if buddy is None or (usb.online(now) and not pairing) else buddy
             if touch is not None and active.online(now) and not pairing:
                 try:
-                    gesture = touch.poll(now, lcd.orientation)
+                    gesture = touch.poll(now, lcd.orientation, active.prompt.ready())
                 except OSError:
                     touch.close()
                     touch = None
@@ -220,7 +220,11 @@ def run():
                     active.prompt.move(1)
                 elif gesture == "right":
                     active.prompt.move(-1)
-                elif gesture == "tap":
+                elif gesture == "up":
+                    active.navigate(1)
+                elif gesture == "down":
+                    active.navigate(-1)
+                elif gesture == "hold":
                     active.choose()
             ui.draw(active, now)
             time.sleep_ms(20)

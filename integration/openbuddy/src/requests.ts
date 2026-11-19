@@ -11,14 +11,17 @@ export type ChoiceRequest = {
   field?: string
   answerType?: "string" | "multiselect"
 }
-export type Preview = Pick<ChoiceRequest, "kind" | "id" | "title" | "options">
+export type Preview = Pick<ChoiceRequest, "kind" | "id" | "title" | "options"> & { position: number; total: number }
 
-// The firmware's built-in font is ASCII only. Never silently truncate a choice
-// or a permission: approving an incomplete description is unsafe.
-function display(text: unknown, limit: number): string | undefined {
+// Form labels may lose unsupported glyphs, but never silently truncate a permission.
+function display(text: unknown, limit: number): { value: string; stripped: boolean } | undefined {
   if (typeof text !== "string") return undefined
-  const ascii = text.normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
-  return ascii.length <= limit && /^[\x20-\x7e]*$/.test(ascii) ? ascii : undefined
+  const normalized = text.normalize("NFKD").replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\u2018\u2019]/g, "'")
+    .replace(/(\d)\u00b0/g, "$1 deg")
+  if (/[\x00-\x1f\x7f]/.test(normalized)) return // Never merge lines or control characters.
+  const ascii = normalized.replace(/[^\x20-\x7e]/g, "").trim()
+  return ascii && ascii.length <= limit ? { value: ascii, stripped: ascii !== normalized.trim() } : undefined
 }
 
 export function formRequest(form: any): ChoiceRequest | undefined {
@@ -28,17 +31,21 @@ export function formRequest(form: any): ChoiceRequest | undefined {
   if ((field.type !== "string" && !(field.type === "multiselect" && field.maxItems === 1
       && (field.minItems === undefined || field.minItems <= 1)))
       || typeof field.key !== "string" || !field.key || field.hidden
-      || field.when?.length || field.custom === true
+      || field.when?.length
       || !Array.isArray(field.options) || field.options.length < 2 || field.options.length > 8) return
-  const title = display([form.title, field.title, field.description].filter(Boolean).join(" - "), 600)
-  const options = field.options.map((option: any) => display(
+  const title = display([form.title, field.title, field.description,
+    field.custom === true ? "Other answers: use OpenCode" : undefined].filter(Boolean).join(" - "), 600)
+  const options: Array<ReturnType<typeof display>> = field.options.map((option: any) => display(
     [option.label, option.description].filter(Boolean).join(" - "), 120))
-  if (!title || options.some((option: string | undefined) => !option)
-      || new Set(options).size !== options.length
+  if (!title || options.some(option => !option)
+      || new Set(options.map(option => option?.value)).size !== options.length
       || field.options.some((option: any) => typeof option.value !== "string")
       || new Set(field.options.map((option: any) => option.value)).size !== field.options.length) return
-  return { kind: "form", id: form.id, sessionID: form.sessionID, title,
-    options: options as string[], values: field.options.map((option: any) => option.value),
+  const visibleTitle = (title.stripped || options.some(option => option?.stripped)
+    ? "TEXT FILTERED - " : "") + title.value
+  if (visibleTitle.length > 600) return
+  return { kind: "form", id: form.id, sessionID: form.sessionID, title: visibleTitle,
+    options: options.map(option => option!.value), values: field.options.map((option: any) => option.value),
     field: field.key, answerType: field.type }
 }
 
@@ -58,10 +65,22 @@ export function permissionRequest(request: any): ChoiceRequest | undefined {
     values: ["reject", "once", "always"] }
 }
 
-export function preview(view: View, requests: Map<string, ChoiceRequest>): Preview | undefined {
+export function preview(view: View, requests: Map<string, ChoiceRequest>, selected?: string): Preview | undefined {
   const kind = view.state === "permission" ? "permission" : view.state === "question" ? "form" : undefined
-  const request = [...requests.values()].find(item => item.kind === kind)
-  return request && { kind: request.kind, id: request.id, title: request.title, options: request.options }
+  const items = [...requests.values()].filter(item => item.kind === kind)
+  if (items.length > 100) return // The device cannot show a truthful bounded request count.
+  const position = Math.max(0, items.findIndex(item => `${item.kind}:${item.id}` === selected))
+  const request = items[position]
+  return request && { kind: request.kind, id: request.id, title: request.title,
+    options: request.options, position: position + 1, total: items.length }
+}
+
+export function navigate(view: View, requests: Map<string, ChoiceRequest>, id: string, step: number): string | undefined {
+  const current = preview(view, requests, id)
+  if (!current || current.id !== id.split(":").slice(1).join(":") || current.total < 2 || ![-1, 1].includes(step)) return
+  const items = [...requests.values()].filter(item => item.kind === current.kind)
+  const item = items[(current.position - 1 + step + items.length) % items.length]
+  return `${item.kind}:${item.id}`
 }
 
 export async function submitChoice(item: ChoiceRequest, index: number,

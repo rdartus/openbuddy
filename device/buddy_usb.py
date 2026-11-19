@@ -114,3 +114,8 @@ class BuddyUSB:
         event = self.prompt.choose()
         if event is not None:
             self._send(event)
+
+    def navigate(self, step):
+        event = self.prompt.navigate(step)
+        if event is not None:
+            self._send(event)

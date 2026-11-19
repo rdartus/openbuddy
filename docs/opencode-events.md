@@ -20,8 +20,21 @@ permission, aucune modification des prompts, aucun nouvel outil agent**.
 
 Le C6 ne dispose pas de tactile : les réponses restent à faire dans OpenCode.
 Sur le S3 AMOLED v2, le FT3168 (I²C 0x38, bus partagé avec l'IMU) permet de
-parcourir horizontalement les choix à droite du pet, puis de valider par toucher.
-Le texte long défile ; un toucher peut valider dès que la demande et les choix
+parcourir horizontalement les choix à droite du pet. Depuis le firmware 0.6.3,
+la validation exige un
+**appui stable d'au moins une seconde dans le cadre du choix affiché** : un
+toucher bref ne valide rien. Après un glissement, tout nouvel appui commencé
+dans les 1,2 seconde est ignoré pour la validation ; un mouvement, une rotation
+ou un changement de demande l'annule aussi.
+Un glissement vertical passe d'une demande représentable à l'autre **dans le même
+projet et pour la priorité courante** (permissions avant formulaires) ; l'écran
+indique `REQUEST 2/3`. Un changement de demande efface d'abord la sélection
+précédente. Les demandes d'autres projets restent accessibles dans OpenCode,
+mais ne sont pas incluses dans ce compteur.
+Les textes longs de la demande et du choix affiché défilent chacun de droite
+à gauche, en boucle avec une pause au début ; les textes courts restent fixes.
+`DEMANDE` et `CHOIX 1 SUR 2` identifient les deux zones, sans compteurs de pages.
+Un appui maintenu peut valider dès que la demande et les choix
 sont reçus, sans attendre la fin du défilement. Pour les permissions, l'écran
 propose **Refuser** (sélectionné initialement), **Autoriser une fois** et
 **Toujours autoriser** (règle persistante). Les demandes impossibles à
@@ -30,13 +43,27 @@ vérifie son identifiant et sa session avant d'appeler `session.form.reply` ou
 `permission.reply` du client v2. Il ne valide pas les permissions via HID.
 
 Seuls les formulaires à **un champ de choix unique** non ambigu sont proposés
-sur la carte ; saisie libre, choix multiples, champs conditionnels et demandes
-dépassant les limites du protocole restent dans OpenCode. Les choix peuvent
+sur la carte ; les formulaires sans choix prédéfinis, les choix multiples, les
+champs conditionnels et les demandes dépassant les limites du protocole restent
+dans OpenCode. Les choix prédéfinis peuvent être sélectionnés sur la carte même
+si le champ autorise *aussi* une réponse
+libre : l'écran précise alors `Other answers: use OpenCode`. Pour saisir une
+réponse libre, il faut toujours revenir dans OpenCode. Les formulaires sans
+choix prédéfinis restent dans OpenCode. Les choix peuvent
 être transmis en plusieurs trames (description jusqu'à 600 caractères ASCII,
 chaque proposition jusqu'à 120 caractères). La permission doit afficher sans
 transformation son action, ses ressources, son message et la portée de la règle
 persistante (`save`) ; si ces données ne sont pas représentables, elle n'est
 pas proposée sur la carte. L'interface habituelle d'OpenCode reste disponible.
+Dans les formulaires seulement, les accents et apostrophes typographiques sont
+transcrits en ASCII ; `180°` est affiché `180 deg`. Les autres caractères non
+ASCII sont retirés avant l'envoi à la carte ; `TEXT FILTERED` avertit alors que
+du texte a été supprimé. Les valeurs des réponses envoyées à OpenCode restent
+inchangées. Le plugin refuse un titre ou un choix devenu vide, deux choix devenus
+identiques, un caractère de contrôle ou un dépassement de longueur après ce
+filtrage. **Les permissions ne sont jamais purgées** : action, ressources et
+portée persistante doivent rester affichables sans transformation, sinon la
+permission reste dans OpenCode.
 Les mêmes états d'attention produisent aussi une notification Windows native,
 en plus du son et de l'affichage physique.
 
@@ -173,6 +200,28 @@ modifiable avec `--quota-config FICHIER`. `--no-quota` désactive la commande.
 La commande `gh` utilise `GITHUB_TOKEN` en priorité : un jeton invalide dans
 l'environnement du pont fait échouer la requête (HTTP 401) même si `gh auth login` est valide.
 
+## Mode discret sur le PC
+
+Facultatif : `%APPDATA%\openbuddy\attention.json` (ou
+`$XDG_CONFIG_HOME/openbuddy/attention.json` sous Unix), avec
+`--attention-config FICHIER` pour choisir un autre emplacement :
+
+```json
+{
+  "quiet_hours": {"start": "22:00", "end": "08:00"},
+  "sound_states": ["permission", "question"],
+  "toast_states": ["permission", "question", "error"]
+}
+```
+
+Les horaires suivent l'heure locale du PC, y compris au-delà de minuit ; pendant
+la plage discrète, sons **et** bannières sont coupés, mais la carte continue
+d'afficher l'état. Les tableaux peuvent être vides. En l'absence de fichier, le
+comportement existant ne change pas. Le pont relit le fichier toutes les 30 s,
+conserve la dernière configuration valide en cas d'erreur et signale
+`quiet_hours_active` / `attention_error` dans `pc.opencode status`. Les réglages
+Windows « Ne pas déranger » ne sont pas modifiés.
+
 ## États et priorités
 
 | Événement ou situation | État du compagnon |
@@ -188,6 +237,16 @@ l'environnement du pont fait échouer la requête (HTTP 401) même si `gh auth l
 | `session.execution.failed` | `error` pendant 8 secondes, puis `idle` |
 | `session.execution.interrupted` | pas de faux succès |
 | Plus d'exécution, plugin actif | `idle` |
+
+Le firmware **0.6.0** distingue `READY` (plugin actif, aucune exécution),
+`NO OPENCODE` (pont relié à la carte, aucune instance de plugin reçue) et
+`OFFLINE` (plus de liaison/heartbeat du pont). Le pont garde le comportement
+précédent avec les anciens firmwares. Les activités simultanées sont résumées
+par leur nombre et leur phase, sans titre de session ; un retry affiche son délai.
+Sur S3, les longs textes défilent horizontalement dans leur propre zone ; tous
+leurs caractères restent accessibles pendant le cycle. La police et le protocole
+restent ASCII : une permission contenant des caractères impossibles à rendre
+doit encore être traitée dans OpenCode.
 
 Les demandes sont suivies **par identifiant** : répondre à une permission ou à un
 formulaire ne masque pas les autres. Une session terminée ne masque pas une autre

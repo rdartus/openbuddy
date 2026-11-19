@@ -43,10 +43,18 @@ La geometrie est definie par profil dans `board_config.py` : le C6 garde son
 interface 320x172, le S3 utilise tout son panneau et agrandit le pet x2 au plus
 proche voisin, sans changer le pack 96x104. Le tactile FT3168 (I²C 0x38 sur
 SDA47/SCL48) sert à choisir une réponse OpenCode par glissement horizontal et
-à la valider par un toucher. L'interface affiche la demande et le choix à droite
+à la valider par un appui stable d'au moins une seconde **dans le cadre du choix**.
+Un toucher bref, un glissement ou un appui commencé moins de 1,2 seconde après
+un glissement ne valident rien. L'interface affiche la demande et le choix à droite
 du pet, avec défilement du texte qui ne tient pas dans la zone. Dès que la
-demande et les choix sont reçus, un toucher valide le choix affiché sans attendre
+demande et les choix sont reçus, un appui maintenu valide le choix affiché sans attendre
 la fin du défilement, y compris pour « Toujours autoriser ».
+Le firmware 0.6.3 utilise les glissements verticaux pour changer de demande
+représentable dans le projet courant, les horizontaux pour changer de choix.
+La demande et le choix affiché défilent horizontalement de droite à gauche
+quand ils sont trop longs, sans effacement de la ligne entre deux positions ni
+compteurs de pages. Une demande non affichable
+reste à traiter dans OpenCode.
 Sans tactile fonctionnel, répondre depuis OpenCode. Aucune LED WS2812 n'est supposée, aucun GPIO de rétroéclairage
 C6 n'est activé sur l'AMOLED.
 

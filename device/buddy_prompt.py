@@ -16,6 +16,7 @@ class Prompt:
                        "text": message["text"], "parts": [message["text"]] + [None] * (message["parts"] - 1),
                        "options": [None] * message["count"],
                        "selected": 0, "sent": False,
+                       "position": message.get("position", 1), "total": message.get("total", 1),
                        "title_at": None, "option_at": None}
 
     def part(self, message):
@@ -54,3 +55,10 @@ class Prompt:
         prompt["sent"] = True
         return {"event": "choice", "kind": prompt["kind"],
                 "token": prompt["token"], "index": prompt["selected"]}
+
+    def navigate(self, step):
+        prompt = self.ready()
+        if prompt is None or prompt["sent"] or prompt["total"] < 2 or step not in (-1, 1):
+            return None
+        return {"event": "navigate", "kind": prompt["kind"],
+                "token": prompt["token"], "step": step}

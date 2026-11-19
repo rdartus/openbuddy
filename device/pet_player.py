@@ -77,7 +77,10 @@ class PetPlayer:
         if (not isinstance(animations, dict) or not 1 <= len(animations) <= 16
                 or not isinstance(states, dict)):
             raise ValueError("Invalid pet animation table")
+        # Standby is a bridge-only display state; existing packs use idle for it.
         for state in STATES + ("offline", "pairing"):
+            if state == "standby":
+                continue
             if states.get(state) not in animations:
                 raise ValueError("Pet is missing a required state")
         for name, animation in animations.items():

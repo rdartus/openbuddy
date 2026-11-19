@@ -20,6 +20,7 @@ from bleak.exc import BleakError
 
 from device.buddy_protocol import SERVICE_UUID, STATES, TX_UUID
 from pc.buddy import Link, UsbLink, find_device, find_serial_port
+from pc.attention import AttentionPolicy
 from pc.notifications import SOUND_ALIASES, SoundNotifier
 from pc.quota import QuotaMonitor
 from pc.toasts import DesktopNotifier
@@ -108,7 +109,10 @@ class Registry:
                     or any(not isinstance(option, str) or not 1 <= len(option) <= 120
                            for option in choice["options"])
                     or any(not 32 <= ord(char) <= 126 for text in
-                           [choice["title"], *choice["options"]] for char in text)
+                            [choice["title"], *choice["options"]] for char in text)
+                    or type(choice.get("position", 1)) is not int
+                    or type(choice.get("total", 1)) is not int
+                    or not 1 <= choice.get("position", 1) <= choice.get("total", 1) <= 100
                     or message["state"] != ("question" if choice["kind"] == "form" else "permission")):
                 raise ValueError("Invalid choice preview")
             view["choice"] = choice
@@ -145,7 +149,7 @@ class Registry:
 
 class Bridge:
     def __init__(self, port=19847, address=None, no_ble=False, path=None, mute=False, no_notifications=False,
-                 serial_port=None, no_quota=False, quota_path=None):
+                 serial_port=None, no_quota=False, quota_path=None, attention_path=None):
         self.port = port
         self.address = address
         self.no_ble = no_ble
@@ -162,11 +166,24 @@ class Bridge:
         self.last_delivered = None
         self.notifier = SoundNotifier(muted=mute)
         self.desktop_notifier = DesktopNotifier(disabled=no_notifications)
+        self.attention = AttentionPolicy(attention_path)
         self.sound_worker = None
         self.quota = QuotaMonitor(quota_path)
         self.no_quota = no_quota
         self.quota_worker = None
         self.pending_choice = None
+        self.pending_navigation = None
+
+    def current_view(self):
+        view = self.registry.current()
+        navigation = self.pending_navigation
+        if navigation is not None:
+            if (time.monotonic() - navigation["at"] > 5
+                    or view is None or view.get("source") != navigation["source"]):
+                self.pending_navigation = None
+            else:
+                view = {key: value for key, value in view.items() if key != "choice"}
+        return view
 
     async def start(self):
         if self.path.exists():
@@ -199,15 +216,20 @@ class Bridge:
         print("OpenBuddy event bridge listening on 127.0.0.1:%d" % self.port, flush=True)
 
     def health(self):
-        view = self.registry.current()
+        view = self.current_view()
+        preview = ("available" if view is not None and "choice" in view else
+                   "open_in_opencode" if view is not None and view["state"] in ("question", "permission")
+                   and self.touch_connected else "none")
         return {"v": 1, "sources": len(self.registry.sources), "ble_connected": self.ble_connected,
-                "usb_connected": self.usb_connected,
-                "touch_connected": self.touch_connected,
+                 "usb_connected": self.usb_connected,
+                 "touch_connected": self.touch_connected,
+                 "display_request": preview,
                 "state": {key: value for key, value in view.items() if key not in ("choice", "source")}
                  if view is not None else None, "last_delivered": self.last_delivered, "read_only": False,
                 "sounds_enabled": self.notifier.enabled,
                 "notifications_enabled": self.desktop_notifier.enabled,
-                "notifications_last_error": self.desktop_notifier.error,
+                 "notifications_last_error": self.desktop_notifier.error,
+                 "quiet_hours_active": self.attention.quiet(), "attention_error": self.attention.error,
                 "quota": self.quota.text or None, "quota_error": self.quota.error}
 
     async def handle(self, reader, writer):
@@ -241,13 +263,20 @@ class Bridge:
                     if re.fullmatch(r"[a-zA-Z0-9-]{1,64}", source):
                         current = self.registry.current()
                         selected = self.pending_choice
+                        navigation = self.pending_navigation
                         if (self.touch_connected and selected is not None and current is not None
                                 and current.get("source") == source
                                 and selected["source"] == source
                                 and selected["id"] == current["choice"]["id"]):
                             self.pending_choice = None
                             status, response = 200, {"choice": {key: selected[key] for key in ("kind", "id", "index")},
-                                                     "touch": self.touch_connected}
+                                                      "touch": self.touch_connected}
+                        elif (self.touch_connected and navigation is not None and not navigation["sent"]
+                              and current is not None and current.get("source") == source
+                              and time.monotonic() - navigation["at"] < 5):
+                            navigation["sent"] = True
+                            status, response = 200, {"choice": None, "touch": True,
+                                                      "navigate": {key: navigation[key] for key in ("kind", "id", "step")}}
                         else:
                             status, response = 200, {"choice": None, "touch": self.touch_connected}
                 elif method == "POST" and path == "/stop":
@@ -264,6 +293,11 @@ class Bridge:
                         if isinstance(payload, dict) and not self.touch_connected:
                             payload.pop("choice", None)
                         accepted = self.registry.update(payload)
+                        if (accepted and self.pending_navigation is not None
+                                and self.pending_navigation["sent"]
+                                and payload["source"] == self.pending_navigation["source"]
+                                and payload.get("choice", {}).get("id") != self.pending_navigation["id"]):
+                            self.pending_navigation = None
                         status, response = 200, {"accepted": accepted}
                 else:
                     status, response = 404, {"error": "Unknown endpoint"}
@@ -284,20 +318,27 @@ class Bridge:
         # Audio must not depend on the BLE device being connected.
         while True:
             view = self.registry.current()
-            self.notifier.observe(view["state"] if view is not None else None)
-            self.desktop_notifier.observe(view["state"] if view is not None else None)
+            state = view["state"] if view is not None else None
+            self.notifier.observe(state, notify=self.attention.allow(state, "sound"))
+            self.desktop_notifier.observe(state, notify=self.attention.allow(state, "toast"))
             self.quota.observe(view["state"] if view is not None else None)
             await asyncio.sleep(0.25)
 
     def device_event(self, message):
-        if not self.touch_connected or message.get("event") != "choice" or message.get("v") != 1:
+        if not self.touch_connected or message.get("v") != 1:
             return
-        view = self.registry.current()
+        view = self.current_view()
         choice = view.get("choice") if view else None
-        if (choice is not None and message.get("kind") == choice["kind"]
-                and message.get("token") == choice["id"]
-                and type(message.get("index")) is int
-                and 0 <= message["index"] < len(choice["options"])):
+        if choice is None or message.get("kind") != choice["kind"] or message.get("token") != choice["id"]:
+            return
+        if (message.get("event") == "navigate" and choice.get("total", 1) > 1
+                and type(message.get("step")) is int and message["step"] in (-1, 1)):
+            self.pending_choice = None
+            self.pending_navigation = {"source": view["source"], "kind": choice["kind"],
+                                       "id": choice["id"], "step": message["step"],
+                                       "at": time.monotonic(), "sent": False}
+        elif (message.get("event") == "choice" and type(message.get("index")) is int
+              and 0 <= message["index"] < len(choice["options"])):
             self.pending_choice = {"source": view["source"], "kind": choice["kind"],
                                    "id": choice["id"], "index": message["index"]}
 
@@ -319,7 +360,8 @@ class Bridge:
                     self.touch_connected = bool(status and status.get("touch"))
                     self.ble_connected = True
                     print("OpenBuddy BLE connected", flush=True)
-                    await self.deliver_states(link, self.touch_connected)
+                    await self.deliver_states(link, self.touch_connected,
+                                              str((status or {}).get("firmware", "")).startswith("0.6."))
                     raise ConnectionError("BLE connection closed")
             except (BleakError, ConnectionError, OSError, TimeoutError, ValueError) as error:
                 print("BLE unavailable:", type(error).__name__, "- retrying", flush=True)
@@ -328,7 +370,7 @@ class Bridge:
                 self.touch_connected = False
             await asyncio.sleep(3)
 
-    async def deliver_states(self, link, touch=True):
+    async def deliver_states(self, link, touch=True, standby=False):
         last, ping_at, touch_check_at = None, 0, time.monotonic() + 15
         while not link.disconnected.is_set():
             if not touch and time.monotonic() >= touch_check_at:
@@ -338,11 +380,17 @@ class Bridge:
                 touch_check_at = time.monotonic() + 15
                 if touch:
                     last = None  # Re-send the pending choice after touch recovery.
-            view = self.registry.current()
+            view = self.current_view()
+            if view is None and standby:
+                view = {"state": "standby", "label": "Waiting for OpenCode"}
+            elif (view is not None and touch and "choice" not in view
+                  and view["state"] in ("question", "permission")):
+                view = dict(view, label="Answer in OpenCode" if view["state"] == "question"
+                            else "Approve in OpenCode")
             if view is not None and self.quota.text:
                 view = dict(view, info=self.quota.text)
             if view is None:
-                # No plugin lease: stop heartbeats so firmware becomes OFFLINE.
+                # Legacy firmware has no standby state: allow its lease to expire.
                 last = None
             elif view != last:
                 state = {key: value for key, value in view.items() if key not in ("choice", "source")}
@@ -350,10 +398,12 @@ class Bridge:
                 choice = view.get("choice") if touch else None
                 if choice is not None:
                     title = choice["title"]
-                    parts = [title[:90]] + [title[index:index + 120]
-                                             for index in range(90, len(title), 120)]
+                    # Leave room for position/total in a 256-byte BLE frame.
+                    parts = [title[:60]] + [title[index:index + 120]
+                                             for index in range(60, len(title), 120)]
                     await link.request("prompt", kind=choice["kind"], token=choice["id"],
-                                       text=parts[0], count=len(choice["options"]), parts=len(parts))
+                                       text=parts[0], count=len(choice["options"]), parts=len(parts),
+                                       position=choice.get("position", 1), total=choice.get("total", 1))
                     for index, text in enumerate(parts[1:], 1):
                         await link.request("part", token=choice["id"], index=index, text=text)
                     for index, text in enumerate(choice["options"]):
@@ -376,7 +426,8 @@ class Bridge:
                 self.touch_connected = bool(status and status.get("touch"))
                 self.usb_connected = True
                 print("OpenBuddy USB connected on", port, flush=True)
-                await self.deliver_states(link, self.touch_connected)
+                await self.deliver_states(link, self.touch_connected,
+                                          str((status or {}).get("firmware", "")).startswith("0.6."))
                 raise ConnectionError("USB connection closed")
             except (ConnectionError, OSError, TimeoutError, ValueError) as error:
                 print("USB unavailable:", type(error).__name__, "-", error, "- retrying", flush=True)
@@ -410,8 +461,9 @@ class Bridge:
 
 async def run(args):
     bridge = Bridge(args.port, args.address, args.no_ble, mute=args.mute,
-                    no_notifications=args.no_notifications, serial_port=args.serial,
-                    no_quota=args.no_quota, quota_path=Path(args.quota_config) if args.quota_config else None)
+                     no_notifications=args.no_notifications, serial_port=args.serial,
+                     no_quota=args.no_quota, quota_path=Path(args.quota_config) if args.quota_config else None,
+                     attention_path=args.attention_config)
     try:
         await bridge.start()
         if args.duration is None:
@@ -447,6 +499,7 @@ def main():
     parser.add_argument("--no-notifications", action="store_true", help="Disable Windows toast notifications, independently of sound")
     parser.add_argument("--no-quota", action="store_true", help="Do not run the provider quota command")
     parser.add_argument("--quota-config", metavar="FILE", help="Quota configuration (default: %%APPDATA%%/openbuddy/quota.json)")
+    parser.add_argument("--attention-config", metavar="FILE", help="Optional quiet hours and alert states JSON")
     parser.add_argument("--duration", type=float, help="Stop after this many seconds")
     args = parser.parse_args()
     if not (args.port == 0 or 1024 <= args.port <= 65535) or (args.duration is not None and args.duration <= 0):

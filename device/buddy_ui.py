@@ -6,20 +6,23 @@ from st7789 import rgb
 import board_config as cfg
 
 COLORS = {
-    "offline": (72, 84, 108), "idle": (72, 132, 180),
+    "offline": (72, 84, 108), "standby": (100, 110, 150), "idle": (72, 132, 180),
     "thinking": (70, 116, 255), "working": (32, 220, 210),
     "permission": (255, 120, 24), "question": (255, 210, 40),
     "success": (50, 230, 120), "error": (255, 55, 60),
     "retry": (220, 140, 32), "pairing": (170, 90, 255),
 }
 LABELS = {
-    "offline": "OFFLINE", "idle": "READY", "thinking": "THINKING",
+    "offline": "OFFLINE", "standby": "NO OPENCODE", "idle": "READY", "thinking": "THINKING",
     "working": "WORKING", "permission": "PERMISSION", "question": "QUESTION",
     "success": "DONE", "error": "ERROR", "retry": "RETRY", "pairing": "PAIRING",
 }
 BACKGROUND = rgb(*cfg.UI_BACKGROUND)
 WHITE = rgb(225, 233, 245)
 MUTED = rgb(120, 138, 158)
+MARQUEE_STEP_MS = 150
+MARQUEE_HOLD_STEPS = 10
+MARQUEE_GAP = " " * 8
 
 
 def printable(text):
@@ -27,14 +30,14 @@ def printable(text):
                     for character in text)
 
 
-def page(text, width, rows, now):
-    """Return a fixed-width window; wait at both ends of a long text."""
-    capacity = width * rows
-    last = max(0, len(text) - capacity)
-    step = (now // 350) % (last + 9) if last else 0
-    start = min(last, max(0, step - 4))
-    content = text[start:start + capacity]
-    return [content[offset:offset + width] for offset in range(0, len(content), width)]
+def marquee(text, width, elapsed):
+    """A looping, right-to-left text window with a pause before each pass."""
+    if len(text) <= width:
+        return text
+    steps = len(text) + len(MARQUEE_GAP) + MARQUEE_HOLD_STEPS
+    step = (max(0, elapsed) // MARQUEE_STEP_MS) % steps
+    start = max(0, step - MARQUEE_HOLD_STEPS)
+    return (text + MARQUEE_GAP + text)[start:start + width]
 
 
 class BuddyUI:
@@ -104,9 +107,12 @@ class BuddyUI:
         if not isinstance(prompt, dict) or state not in ("question", "permission") or cfg.DISPLAY_DRIVER != "co5300":
             prompt = None
         if prompt is not None:
-            footer = "SENDING - CHECK OPENCODE" if prompt["sent"] else "SWIPE: CHOICE  TAP: ANSWER"
+            footer = ("ENVOI... VERIFIER OPENCODE" if prompt["sent"] else
+                      "H: CHOIX V: DEMANDE  VALIDER: APPUI 1s SUR CHOIX" if prompt.get("total", 1) > 1 else
+                      "GLISSER: CHOIX  VALIDER: APPUI 1s SUR CHOIX")
         snapshot = (state, detail if prompt is None else prompt["token"], footer,
-                    link, asset_ready, quota, prompt["selected"] if prompt else None)
+                     link, asset_ready, quota,
+                     prompt.get("position", 1) if prompt else None, prompt.get("total", 1) if prompt else None)
         changed = snapshot != self.previous
         if changed:
             self.previous = snapshot
@@ -117,6 +123,9 @@ class BuddyUI:
             lcd.text("OPENBUDDY", 12, cfg.UI_HEADER_Y, WHITE, BACKGROUND)
             lcd.text(link, cfg.UI_LINK_X, cfg.UI_HEADER_Y, MUTED, BACKGROUND)
             lcd.text(LABELS[state], cfg.UI_TEXT_X, cfg.UI_STATE_Y, accent, BACKGROUND, 2)
+            if prompt is not None and prompt.get("total", 1) > 1:
+                lcd.text("DEMANDE %d SUR %d" % (prompt.get("position", 1), prompt["total"]),
+                         cfg.UI_TEXT_X, cfg.UI_STATE_Y + 22, MUTED, BACKGROUND)
             scale = 2 if buddy.passkey is not None else 1
             max_detail = min(24, (lcd.w - cfg.UI_TEXT_X) // (8 * scale))
             if prompt is None:
@@ -135,23 +144,36 @@ class BuddyUI:
                 prompt["title_at"] = now
             if prompt["option_at"] is None:
                 prompt["option_at"] = now
-            question = page(prompt["text"], width, 3,
-                            time.ticks_diff(now, prompt["title_at"]))
-            option = page(prompt["options"][prompt["selected"]], width, 3,
-                          time.ticks_diff(now, prompt["option_at"]))
-            current = (tuple(question), tuple(option), prompt["selected"], prompt["sent"])
+            question = marquee(prompt["text"], width,
+                               time.ticks_diff(now, prompt["title_at"]))
+            option = marquee(prompt["options"][prompt["selected"]], width,
+                             time.ticks_diff(now, prompt["option_at"]))
+            current = (question, option, prompt["selected"])
             if changed or current != self.choice_view:
-                self.choice_view = current
                 lcd = self.lcd
-                lcd.fill_rect(cfg.UI_TEXT_X, cfg.UI_DETAIL_Y, lcd.w - cfg.UI_TEXT_X,
-                              cfg.UI_DIVIDER_Y - cfg.UI_DETAIL_Y, BACKGROUND)
-                for index, line in enumerate(question):
-                    lcd.text(line, cfg.UI_TEXT_X, cfg.UI_DETAIL_Y + index * 12, WHITE, BACKGROUND)
-                lcd.text("%d/%d" % (prompt["selected"] + 1, len(prompt["options"])),
-                         cfg.UI_TEXT_X, cfg.UI_DETAIL_Y + 49, MUTED, BACKGROUND)
-                for index, line in enumerate(option):
-                    lcd.text(line, cfg.UI_TEXT_X, cfg.UI_DETAIL_Y + 63 + index * 12,
+                if changed:
+                    lcd.text("DEMANDE", cfg.UI_TEXT_X, cfg.UI_DETAIL_Y, MUTED, BACKGROUND)
+                    x, y, w, h = cfg.UI_CHOICE_HOLD_RECT
+                    lcd.fill_rect(x, y, w, 1, accent)
+                    lcd.fill_rect(x, y + h - 1, w, 1, accent)
+                    lcd.fill_rect(x, y, 1, h, accent)
+                    lcd.fill_rect(x + w - 1, y, 1, h, accent)
+                selected_changed = (self.choice_view is None
+                                    or prompt["selected"] != self.choice_view[2])
+                if changed or selected_changed:
+                    if not changed:
+                        lcd.fill_rect(cfg.UI_TEXT_X, cfg.UI_DETAIL_Y + 54,
+                                      lcd.w - cfg.UI_TEXT_X, 8, BACKGROUND)
+                    lcd.text("CHOIX %d SUR %d" % (prompt["selected"] + 1, len(prompt["options"])),
+                             cfg.UI_TEXT_X, cfg.UI_DETAIL_Y + 54, MUTED, BACKGROUND)
+                if changed or self.choice_view is None or question != self.choice_view[0]:
+                    # lcd.text paints its own background: clearing here flashes every step.
+                    lcd.text(question, cfg.UI_TEXT_X, cfg.UI_DETAIL_Y + 17, WHITE, BACKGROUND)
+                if changed or self.choice_view is None or option != self.choice_view[1]:
+                    # Padding paints the old answer's trailing pixels in the same transfer.
+                    lcd.text(option + " " * (width - len(option)), cfg.UI_TEXT_X, cfg.UI_DETAIL_Y + 74,
                              accent, BACKGROUND)
+                self.choice_view = current
         else:
             self.choice_view = None
         frame = now // 350

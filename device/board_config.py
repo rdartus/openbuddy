@@ -60,6 +60,7 @@ UI_TEXT_X, UI_LINK_X = 124, 224
 UI_HEADER_Y, UI_STATE_Y, UI_DETAIL_Y, UI_INFO_Y = 15, 55, 87, 113
 UI_DIVIDER_Y, UI_FOOTER_Y = 141, 153
 UI_DIVIDER_INSET = 0
+UI_CHOICE_HOLD_RECT = None  # The C6 has no touch controller.
 
 # Stock firmware defaults to C6; dedicated builds freeze their board identity.
 # A saved explicit profile always wins. The chip model cannot identify PCB wiring.
@@ -94,6 +95,8 @@ if BOARD_MODEL == "waveshare-s3-amoled-164-v2":
     UI_TEXT_X, UI_LINK_X = 228, 344
     UI_HEADER_Y, UI_STATE_Y, UI_DETAIL_Y, UI_INFO_Y = 24, 82, 132, 174
     UI_DIVIDER_Y, UI_FOOTER_Y = 256, 264
+    UI_CHOICE_HOLD_RECT = (UI_TEXT_X - 4, UI_DETAIL_Y + 70,
+                           UI_WIDTH - UI_TEXT_X + 4, 32)
     PET_STORAGE = "internal"
     PET_DIRECTORY = "/openbuddy/pets"
     PET_SELECTION = "/openbuddy/active.json"

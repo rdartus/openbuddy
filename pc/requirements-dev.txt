@@ -1,0 +1,2 @@
+# Host-only firmware compatibility checks; never installed on the ESP32 or in kits.
+mpy-cross==1.29.0.post2

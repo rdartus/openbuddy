@@ -3,7 +3,7 @@
 import json
 
 VERSION = 1
-FIRMWARE_VERSION = "0.5.0"
+FIRMWARE_VERSION = "0.6.3"
 DEVICE_NAME = "OpenBuddy"
 SERVICE_UUID = "c8ad0001-4f90-4ab8-9976-22401b7861b0"
 RX_UUID = "c8ad0002-4f90-4ab8-9976-22401b7861b0"
@@ -11,7 +11,7 @@ TX_UUID = "c8ad0003-4f90-4ab8-9976-22401b7861b0"
 MAX_FRAME = 256
 CHUNK_SIZE = 20  # Works even with the default ATT MTU of 23.
 HEARTBEAT_MS = 15_000
-STATES = ("idle", "thinking", "working", "permission", "question",
+STATES = ("standby", "idle", "thinking", "working", "permission", "question",
           "success", "error", "retry")
 
 
@@ -59,7 +59,8 @@ def validate_command(message):
     if command in ("prompt", "part", "option"):
         token = message.get("token")
         if not isinstance(token, str) or not 1 <= len(token) <= 48 or not all(
-                character.isalnum() or character in "_-" for character in token):
+                "a" <= character <= "z" or "A" <= character <= "Z"
+                or "0" <= character <= "9" or character in "_-" for character in token):
             raise ValueError("Invalid request token")
         if command == "prompt":
             if message.get("kind") not in ("form", "permission"):
@@ -68,6 +69,10 @@ def validate_command(message):
                 raise ValueError("Invalid option count")
             if type(message.get("parts")) is not int or not 1 <= message["parts"] <= 6:
                 raise ValueError("Invalid prompt length")
+            position, total = message.get("position", 1), message.get("total", 1)
+            if (type(position) is not int or type(total) is not int
+                    or not 1 <= position <= total <= 100):
+                raise ValueError("Invalid request position")
             text = message.get("text")
             if not isinstance(text, str) or not 1 <= len(text) <= 90:
                 raise ValueError("Invalid prompt text")

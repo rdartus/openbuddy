@@ -4,7 +4,7 @@ import { Service } from "@opencode/client/service"
 import { randomUUID } from "node:crypto"
 import { normalize } from "node:path"
 import { Tracker, type Event, type Snapshot } from "./state.ts"
-import { formRequest, permissionRequest, preview, submitChoice, type ChoiceRequest } from "./requests.ts"
+import { formRequest, permissionRequest, preview, navigate, submitChoice, type ChoiceRequest } from "./requests.ts"
 import { nextChoice, publish } from "./transport.ts"
 
 const EVENTS = [
@@ -32,6 +32,7 @@ export default {
     let tracker = new Tracker()
     let requests = new Map<string, ChoiceRequest>()
     let touchAvailable = false
+    let selectedRequest: string | undefined
     let synchronized = false
     let replay: { event: Event; at: number }[] | undefined
     let replayOverflow = false
@@ -168,7 +169,7 @@ export default {
     const sender = setInterval(() => {
       if (sending || !synchronized || signal.aborted) return
       const view = tracker.view()
-      const choice = touchAvailable ? preview(view, requests) : undefined
+      const choice = touchAvailable ? preview(view, requests, selectedRequest) : undefined
       const serialized = JSON.stringify([view, choice])
       if (serialized === lastView && Date.now() - lastSent < 3000) return
       sending = true
@@ -184,6 +185,12 @@ export default {
         try {
           const result = await nextChoice(source, signal)
           touchAvailable = result.touch
+          if (result.navigate && synchronized) {
+            const current = preview(tracker.view(), requests, selectedRequest)
+            if (current && current.kind === result.navigate.kind && current.id === result.navigate.id) {
+              selectedRequest = navigate(tracker.view(), requests, `${current.kind}:${current.id}`, result.navigate.step)
+            }
+          }
           const selected = result.choice
           if (selected && synchronized) {
             const item = requests.get(selected.kind + ":" + selected.id)

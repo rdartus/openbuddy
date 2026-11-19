@@ -20,9 +20,10 @@ export async function publish(source: string, sequence: number, view: View, sign
 
 export async function nextChoice(source: string, signal: AbortSignal): Promise<{
   touch: boolean; choice?: { kind: "form" | "permission"; id: string; index: number }
+  navigate?: { kind: "form" | "permission"; id: string; step: number }
 }> {
   const result = await bridgeRequest("GET", `/choice?source=${encodeURIComponent(source)}`, undefined, signal)
-  return { touch: result.touch === true, choice: result.choice ?? undefined }
+  return { touch: result.touch === true, choice: result.choice ?? undefined, navigate: result.navigate ?? undefined }
 }
 
 async function bridgeRequest(method: "GET" | "POST", path: string, input: unknown,

@@ -107,6 +107,7 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
         status, health = await self.request("GET", "/health")
         self.assertEqual(health["state"]["state"], "thinking")
         self.assertFalse(health["read_only"])
+        self.assertEqual(health["display_request"], "none")
 
     async def test_unauthorized_and_browser_origin_are_rejected(self):
         self.assertEqual((await self.request(token="wrong"))[0], 401)
@@ -218,6 +219,31 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((await self.request("GET", "/choice?source=project-a"))[1], {"choice": None, "touch": True})
         health = (await self.request("GET", "/health"))[1]
         self.assertNotIn("ALWAYS:", json.dumps(health))
+        self.assertEqual(health["display_request"], "available")
+
+    async def test_unrepresentable_waiting_form_is_explicitly_answered_in_opencode(self):
+        self.bridge.touch_connected = True
+        value = message(state="question")
+        value["pending_forms"] = 1
+        await self.request(body=value)
+        self.assertEqual(self.bridge.health()["display_request"], "open_in_opencode")
+        class FakeLink:
+            def __init__(self):
+                self.requests = []
+                self.disconnected = asyncio.Event()
+
+            async def request(self, command, **fields):
+                self.requests.append((command, fields))
+
+        link = FakeLink()
+        task = asyncio.create_task(self.bridge.deliver_states(link, touch=True))
+        try:
+            await asyncio.sleep(0.35)
+            self.assertIn(("state", {"state": "question", "label": "Answer in OpenCode"}), link.requests)
+            self.assertNotIn("prompt", [command for command, _ in link.requests])
+        finally:
+            link.disconnected.set()
+            await task
 
     async def test_c6_or_disconnected_touch_drops_choice_text(self):
         value = message(state="permission")
@@ -228,7 +254,45 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("choice", self.bridge.registry.current())
         self.bridge.device_event({"v": 1, "event": "choice", "kind": "permission", "token": "per_2", "index": 2})
         self.assertEqual((await self.request("GET", "/choice?source=project-a"))[1],
-                         {"choice": None, "touch": False})
+                          {"choice": None, "touch": False})
+
+    async def test_navigation_clears_old_prompt_until_plugin_publishes_next(self):
+        self.bridge.touch_connected = True
+        value = message(state="permission")
+        value["pending_permissions"] = 2
+        value["choice"] = {"kind": "permission", "id": "per_1", "title": "Read a.py - ALWAYS: *.py",
+                           "options": ["REFUSE", "ONCE", "ALWAYS"], "position": 1, "total": 2}
+        self.assertEqual((await self.request(body=value))[0], 200)
+        self.bridge.device_event({"v": 1, "event": "navigate", "kind": "permission", "token": "per_1", "step": 1})
+        self.assertNotIn("choice", self.bridge.current_view())
+        self.bridge.device_event({"v": 1, "event": "choice", "kind": "permission", "token": "per_1", "index": 2})
+        self.assertIsNone(self.bridge.pending_choice)
+        result = (await self.request("GET", "/choice?source=project-a"))[1]
+        self.assertEqual(result["navigate"], {"kind": "permission", "id": "per_1", "step": 1})
+        self.assertNotIn("navigate", (await self.request("GET", "/choice?source=project-a"))[1])
+        value["choice"] = {**value["choice"], "id": "per_2", "position": 2}
+        value["sequence"] = 2
+        self.assertEqual((await self.request(body=value))[0], 200)
+        self.assertEqual(self.bridge.current_view()["choice"]["id"], "per_2")
+        self.assertIsNone(self.bridge.pending_navigation)
+
+    async def test_standby_is_only_sent_to_new_firmware(self):
+        class FakeLink:
+            def __init__(self):
+                self.requests = []
+                self.disconnected = asyncio.Event()
+
+            async def request(self, command, **fields):
+                self.requests.append((command, fields))
+
+        link = FakeLink()
+        task = asyncio.create_task(self.bridge.deliver_states(link, standby=True))
+        try:
+            await asyncio.sleep(0.35)
+            self.assertIn(("state", {"state": "standby", "label": "Waiting for OpenCode"}), link.requests)
+        finally:
+            link.disconnected.set()
+            await task
 
 
 class CommandLineTests(unittest.TestCase):

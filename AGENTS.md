@@ -1,6 +1,6 @@
 # openbuddy
 
-Petit appareil physique (ESP32) qui rend OpenCode interactif dans le monde réel : il signale quand OpenCode attend une réponse et affiche son état (pet animé depuis la microSD ou la flash interne sur S3). Aucune action n'est validée depuis l'appareil pour l'instant.
+Petit appareil physique (ESP32) qui rend OpenCode interactif dans le monde réel : il signale quand OpenCode attend une réponse et affiche son état (pet animé depuis la microSD ou la flash interne sur S3). Sur S3, seuls les choix de formulaires et permissions representables peuvent etre valides depuis l'appareil ; le C6 reste un indicateur.
 
 Lire d'abord `docs/hardware.md` (matériel, brochage, pièges), `docs/opencode-events.md` et `docs/animations.md` avant de modifier le firmware ou l'intégration.
 Pour le S3 AMOLED, lire aussi [le guide firmware QSPI](docs/s3-qspi-build.md), reference technique pour les versions, artefacts, compilation et tests natifs. Le [README Windows S3](README-ESP32-S3-Windows.md) est le parcours unique d'installation, verification des hashes et reflashage ; les anciens guides Windows y renvoient. Ne pas dupliquer ces procedures dans les autres guides.
@@ -21,7 +21,7 @@ Pour le S3 AMOLED, lire aussi [le guide firmware QSPI](docs/s3-qspi-build.md), r
 - `device/buddy_usb.py` : transport USB série, même protocole JSON que BLE, sans HID ni remontée de BOOT. Le tactile S3 remonte les choix par USB ou BLE ; USB prend l'affichage tant que sa lease est active, sauf appairage BLE prioritaire.
 - `device/orientation_demo.py` : ancienne démo conservée.
 - `device/qmi8658.py`, `buddy_orientation.py` : accéléromètre I²C QMI8658 v2 uniquement (SDA47/SCL48, 0x6B), ±2 g/62,5 Hz, polling 100 ms et stabilité 500 ms. Deux sens paysage à 180° seulement, jamais de portrait ; pas d'écriture flash automatique, aucune initialisation I²C sur C6. Axe/signe dans `board_config.py`, montage physique encore à valider.
-- `device/ft3168.py`, `buddy_prompt.py` : tactile S3 v2, FT3168 à 0x38 sur le bus de l'IMU, swipe horizontal + toucher. Réponse possible dès que la demande et les choix sont reçus, même si le texte défile encore ; `Refuser` est initial, `Toujours autoriser` est persistant. Formulaires à un seul champ de choix uniquement ; validation par ID de demande via l'API v2, jamais par HID.
+- `device/ft3168.py`, `buddy_prompt.py` : tactile S3 v2, FT3168 à 0x38 sur le bus de l'IMU ; swipe horizontal = choix, vertical = demande. Validation uniquement par appui stable ≥ 1 s dans le cadre du choix, 1,2 s de garde après glissement, aucune validation sur tap bref. Réponse possible dès que la demande et les choix sont reçus, même si le texte défile encore ; `Refuser` est initial, `Toujours autoriser` est persistant. Formulaires à un seul champ de choix uniquement ; validation par ID de demande via l'API v2, jamais par HID.
 - `device/shared_spi.py`, `sdcard_spi.py`, `storage.py`, `pet_player.py` : bus écran/SD partagé, carte en lecture seule, lecteur RGB565 à un buffer.
 - `pc/buddy.py` : diagnostic BLE Python/Bleak, `uv run python -m pc.buddy` depuis la racine.
 - `device/pet_format.py` : fond noir et dimensions du pack communs au convertisseur PC et aux profils C6/S3. Un seul pack RGB565 `build/pets/<id>-black/` sert aux deux cartes ; seules l'échelle d'affichage et la destination (SD/interne) changent.
@@ -43,7 +43,7 @@ Pour le S3 AMOLED, lire aussi [le guide firmware QSPI](docs/s3-qspi-build.md), r
 - Portage S3-Touch-AMOLED-1.64 experimental : firmware natif obligatoire, installation sans microSD possible. Meme apres un flash officiel reussi, commencer par le guide QSPI, puis `import amoled_qspi`, preflight de `pc.deploy`, `tools/test_amoled.py` et `reset` meme en cas d'echec, avant les animations. Conserver les sorties si le test echoue ; ne pas multiplier les effacements.
 - Revision S3 AMOLED **v2** : profil `waveshare-s3-amoled-164-v2`, CS=GPIO46, 40 MHz, pet exclusivement interne (`PET_STORAGE = "internal"`), aucun montage TF meme sans pack. Build dedie `firmware/boards/OPENBUDDY_S3_AMOLED_V2`, flash 16 Mio, PSRAM octale, identite frozen ; module natif API v4 et CS configurable obligatoires. Un marqueur existant reste prioritaire : le corriger avec `pc.deploy --board waveshare-s3-amoled-164-v2`.
 - USB du build S3 v2 : Serial/JTAG materiel `303a:1001`, TinyUSB/OTG desactive pour ne pas remplacer le peripherique USB apres flashage. Le packaging controle les symboles compiles et publie `usb_backend`, `usb_vid`, `usb_pid` dans `BUILD.json`. Ce correctif exige un nouveau `.bin`, pas seulement `pc.deploy` ; retour du port encore a valider sur carte.
-- Microprogramme **0.5.0** (kits publiés en 1.2.0 : firmware 0.3.0). Pet lu depuis une microSD FAT32 partagée avec l'écran C6 (un buffer de 19 968 octets).
+- Microprogramme **0.6.3** (kits publiés en 1.2.0 : firmware 0.3.0). Pet lu depuis une microSD FAT32 partagée avec l'écran C6 (un buffer de 19 968 octets).
 - Plugin `openbuddy.events` autonome (SDK 2.2.5 embarqué, sans Node/npm), réservé au service OpenCode local géré. Éviter de charger en même temps les copies globale et projet (`Duplicate plugin ID`).
 - Pont Python 3.11+, sons et toasts Windows indépendants du BLE. Utiliser le runtime WinRT 4.1.0 ; ne pas installer Windows-Toasts 1.3.1 (impose un runtime 3.x incompatible).
 - BOOT : appui court = rotation 180° (`landscape`/`landscape_inv`, mémorisée dans `openbuddy-orientation.txt`), appui long 3 s = fenêtre d'appairage BLE, appui court pendant une comparaison de code = confirmation. Plus d'événement `button` ni de F13 sur appui court.
@@ -63,13 +63,21 @@ Pour le S3 AMOLED, lire aussi [le guide firmware QSPI](docs/s3-qspi-build.md), r
 
 ## Vérifications
 
+Après toute modification de `device/`, installer `pc/requirements-dev.txt` dans
+`.venv` puis exécuter **obligatoirement** le contrôle MicroPython 1.29 avant de
+conclure que le firmware passe les tests. Les mocks CPython seuls ne suffisent pas.
+
 ```text
+uv pip install --python .venv\Scripts\python.exe -r pc\requirements-dev.txt
+uv run python -m tools.check_micropython
 uv run python -m unittest discover -s tests -v
 npm --prefix integration/openbuddy test
 npm --prefix integration/openbuddy run typecheck
 ```
 
-Les tests Python simules ne compilent pas le module C. La compilation Linux et
+La CI compile les fichiers de `pc.deploy` avec `mpy-cross` 1.29 et exécute un
+smoke test du protocole et de l'USB sur le port Unix MicroPython 1.29.
+Ces tests ne compilent pas le module C. La compilation Linux et
 les tests C sur hote sont decrits dans le [guide QSPI](docs/s3-qspi-build.md#compilation-linux-sans-docker).
 Un build reussi et des tests simules ne valident ni le transport electrique,
 ni les couleurs, ni la rotation, ni les redemarrages sur la carte reelle.

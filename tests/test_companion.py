@@ -99,6 +99,21 @@ class CompanionTests(unittest.TestCase):
         self.assertEqual(order, ["orientation", "BLE", "player", "storage", "display"])
         self.open.assert_not_called()
 
+    def test_only_a_deliberate_hold_can_trigger_a_usb_choice(self):
+        self.cfg.TOUCH_ADDRESS = 0x38
+        self.usb.online.return_value = True
+        self.clock.stop_at = 100
+        request = object()
+        self.usb.prompt.ready.return_value = request
+        touch = Mock()
+        touch.poll.side_effect = ["left", "tap", "right", "hold", None]
+        self.deps["ft3168"] = types.SimpleNamespace(Touch=Mock(return_value=touch))
+        self.run_until_interrupt()
+        touch.poll.assert_called_with(80, "landscape", request)
+        self.assertEqual([call.args for call in self.usb.prompt.move.call_args_list], [(1,), (-1,)])
+        self.usb.choose.assert_called_once_with()
+        touch.close.assert_called_once_with()
+
     def test_display_startup_error_is_logged_without_drawing_on_failed_bus(self):
         primary = OSError("display init failed")
         self.deps["co5300"].LCD.side_effect = primary

@@ -6,8 +6,9 @@ Le pet sera installé **dans la flash de l’ESP32**, sans carte TF/microSD.
 
 **À prévoir :** Windows 10/11, Git, [uv](https://docs.astral.sh/uv/getting-started/installation/),
 OpenCode v2 et un câble USB-C **de données**. Pas besoin de compiler sur Windows,
-ni d’installer Node.js/npm. L’accéléromètre QMI8658 choisit automatiquement entre
-les deux sens paysage à 180° ; aucun portrait ni tactile. L’axe Y et son signe ont
+ni d'installer Node.js/npm. L'accéléromètre QMI8658 choisit automatiquement entre
+les deux sens paysage à 180° ; aucun portrait. Le tactile FT3168 est utilisé pour
+les réponses aux demandes OpenCode. L’axe Y et son signe ont
 été mesurés sur une carte v2 ; vérifier le résultat visuel après déploiement.
 
 > Toutes les commandes se lancent dans **PowerShell**, depuis le dossier `openbuddy`.

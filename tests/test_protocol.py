@@ -38,7 +38,15 @@ class ProtocolTests(unittest.TestCase):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 validate_command(dict({"v": 1, "id": 1, "cmd": "ping"}, **changes))
         self.assertEqual(validate_command({"v": 1, "id": 1, "cmd": "state", "state": "idle",
-                                           "info": "0 / 200"}), "state")
+                                            "info": "0 / 200"}), "state")
+
+    def test_prompt_token_uses_micropython_compatible_ascii_validation(self):
+        value = {"v": 1, "id": 1, "cmd": "prompt", "kind": "form", "token": "frm_A-9",
+                 "count": 2, "parts": 1, "text": "Choose"}
+        self.assertEqual(validate_command(value), "prompt")
+        for token in ("", "frm:1", "élève", "a" * 49):
+            with self.subTest(token=token), self.assertRaises(ValueError):
+                validate_command(dict(value, token=token))
 
 
 if __name__ == "__main__":

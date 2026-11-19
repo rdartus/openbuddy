@@ -39,11 +39,11 @@ class SoundNotifier:
             self.player = windows_play_sound
         self.enabled = not muted and self.player is not None
 
-    def observe(self, state):
+    def observe(self, state, notify=True):
         if state == self.previous:
             return False
         self.previous = state
-        if not self.enabled or state not in SOUND_ALIASES:
+        if not notify or not self.enabled or state not in SOUND_ALIASES:
             return False
         now = self.clock()
         if now - self.last_played.get(state, -float("inf")) < 2:

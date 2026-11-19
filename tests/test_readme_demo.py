@@ -31,7 +31,8 @@ class DemoTests(unittest.TestCase):
 
     def test_storyboard_shows_each_screen_exactly_once(self):
         states = [scene.state for scene in SCENES]
-        self.assertEqual(set(states), set(STATES) | {"offline"})
+        # Standby describes a connected bridge with no plugin, not an OpenCode event scene.
+        self.assertEqual(set(states), (set(STATES) - {"standby"}) | {"offline"})
         self.assertEqual(len(states), len(set(states)))
         self.assertTrue(all(scene.duration % 100 == 0 for scene in SCENES))
 

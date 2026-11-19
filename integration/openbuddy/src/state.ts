@@ -93,10 +93,13 @@ export class Tracker {
     const result = (state: State, label: string): View => ({ state, label, ...counters })
     if (this.permissions.size) return result("permission", `${this.permissions.size} approval(s) pending`)
     if (this.forms.size) return result("question", `${this.forms.size} response(s) pending`)
-    if (active.some(session => session.tools.size)) return result("working", "Running tools")
-    if (active.some(session => session.compacting)) return result("thinking", "Compacting context")
-    if (active.some(session => session.text.size)) return result("working", "Writing response")
-    if (active.some(session => session.retryAt > now)) return result("retry", "Retry scheduled")
+    if (active.some(session => session.tools.size)) return result("working", active.length > 1 ? `${active.length} sessions: tools` : "Running tools")
+    if (active.some(session => session.compacting)) return result("thinking", active.length > 1 ? `${active.length} sessions: compact` : "Compacting context")
+    if (active.some(session => session.text.size)) return result("working", active.length > 1 ? `${active.length} sessions: writing` : "Writing response")
+    if (active.some(session => session.retryAt > now)) {
+      const seconds = Math.ceil(Math.min(99, Math.max(...active.map(session => session.retryAt - now))) / 1000)
+      return result("retry", `Retry in ${seconds}s`)
+    }
     if (active.length) return result("thinking", active.length > 1 ? `${active.length} sessions active` : "OpenCode active")
     if (this.terminal && now - this.terminal.at < 8000) return result(this.terminal.state, this.terminal.state === "error" ? "Execution failed" : "Response ready")
     return result("idle", "OpenCode ready")

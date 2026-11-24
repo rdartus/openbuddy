@@ -7,12 +7,21 @@ from unittest.mock import patch
 
 from PIL import Image
 
-from pc.pet import (CLIPS, OUTPUT_SIZE, STATE_CLIPS, clip_frames, convert,
-                    has_pillow, parse_codex_pet_url, rgb565, valid_id,
-                    write_pack_from_clips)
+from pc.pet import (BACKGROUND, CLIPS, LEGACY_BACKGROUND, OUTPUT_SIZE, STATE_CLIPS,
+                    clip_frames, convert, has_pillow, pack_output, parse_codex_pet_url,
+                    rgb565, valid_id, write_pack_from_clips)
+from device.pet_format import BACKGROUND as SHARED_BACKGROUND, FRAME_SIZE
 
 
 class ConversionTests(unittest.TestCase):
+    def test_one_pack_format_and_default_path_for_both_boards(self):
+        self.assertIs(BACKGROUND, SHARED_BACKGROUND)
+        self.assertIs(OUTPUT_SIZE, FRAME_SIZE)
+        self.assertEqual(BACKGROUND, (0, 0, 0))
+        self.assertEqual(pack_output("test-pet"), Path("build/pets/test-pet-black"))
+        self.assertEqual(pack_output("test-pet", LEGACY_BACKGROUND),
+                         Path("build/pets/test-pet"))
+
     def test_rgb565_high_byte_first(self):
         image = Image.new("RGB", (4, 1))
         image.putdata([(255, 0, 0), (0, 255, 0), (0, 0, 255), (255, 255, 255)])
@@ -26,6 +35,7 @@ class ConversionTests(unittest.TestCase):
             output = root / "pack"
             manifest = convert(sheet, output, "test-pet", {"author": "test"})
             self.assertEqual((manifest["width"], manifest["height"]), (96, 104))
+            self.assertEqual(manifest["background"], [0, 0, 0])
             self.assertEqual(manifest["states"], STATE_CLIPS)
             self.assertEqual(sum(value["frames"] for value in manifest["animations"].values()), 73)
             self.assertEqual(manifest["animations"]["look"]["frames"], 16)
@@ -54,6 +64,31 @@ class ConversionTests(unittest.TestCase):
             frame = 96 * 104 * 2
             self.assertEqual(data[:2], b"\xf8\x00")
             self.assertEqual(data[8 * frame:8 * frame + 2], b"\x00\x1f")
+
+    def test_black_amoled_pack_composites_translucent_edges_on_black(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            sheet = Image.new("RGBA", (1536, 2288), (0, 0, 0, 0))
+            sheet.paste((0, 0, 255, 128), (0, 0, 2, 2))
+            image = root / "sheet.png"
+            sheet.save(image)
+            black = convert(image, root / "black", "test-pet", {})
+            dark = convert(image, root / "dark", "test-pet", {}, background=(8, 12, 20))
+            self.assertEqual(black["background"], [0, 0, 0])
+            self.assertEqual(dark["background"], [8, 12, 20])
+            black_frame = (root / "black" / "idle.rgb565").read_bytes()
+            dark_frame = (root / "dark" / "idle.rgb565").read_bytes()
+            self.assertEqual(black_frame[:2], b"\x00\x10")  # Half-alpha blue on black.
+            self.assertEqual(black_frame[2:4], b"\x00\x00")  # Transparent edge is truly off.
+            self.assertEqual(dark_frame[2:4], b"\x08\x62")
+            self.assertNotEqual(black_frame[:2], dark_frame[:2])
+
+    def test_unsupported_background_is_rejected_without_writing_a_pack(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            output = Path(temporary) / "pack"
+            with self.assertRaisesRegex(ValueError, "background"):
+                convert("unused.png", output, "test-pet", {}, background=(1, 2, 3))
+            self.assertFalse(output.exists())
 
     def test_v1_atlas_has_no_look_clip_and_thinking_falls_back_to_idle(self):
         with tempfile.TemporaryDirectory() as temporary:

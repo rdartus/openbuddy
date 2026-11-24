@@ -11,7 +11,7 @@ from urllib.request import ProxyHandler, Request, build_opener
 
 from PIL import Image
 
-from c6lcd.buddy_protocol import STATES
+from device.buddy_protocol import STATES
 from pc.opencode import (Bridge, build_bridge_from_args, load_bridge_config,
                          save_bridge_config, validate_bridge_config)
 from pc.pet import CLIPS, OUTPUT_SIZE, clip_frames
@@ -139,6 +139,17 @@ class PetStoreTests(unittest.TestCase):
             ("Quota : non configuré", "Quota : non configuré", "muted"),
         )
 
+    def test_existing_packs_do_not_require_a_standby_animation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            pack_dir, _, _ = create_synthetic_pack(tmp)
+            path = pack_dir / "manifest.json"
+            manifest = json.loads(path.read_text(encoding="utf-8"))
+            manifest["states"].pop("standby", None)
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            active_id, pack, _ = resolve_pet("demo-pet", [tmp])
+            self.assertEqual(active_id, "demo-pet")
+            self.assertNotIn("standby", pack.states)
+
     def test_overlay_controller_reports_isolated_desktop(self):
         controller = OverlayController(
             web_url_provider=lambda: "http://127.0.0.1:8765",
@@ -219,6 +230,10 @@ class BridgeConfigTests(unittest.TestCase):
             self.assertTrue(bridge.no_quota)
             self.assertEqual(bridge.pet_selection, "builtin")
             self.assertEqual(bridge.overlay_scale, 2)
+
+            args.attention_config = str(Path(tmp) / "quiet.json")
+            bridge_quiet = build_bridge_from_args(args, cfg_path=cfg_file)
+            self.assertEqual(bridge_quiet.attention.path, Path(args.attention_config))
 
             # Explicit --no-ble / --no-device overrides saved USB transport.
             args.no_ble = True
@@ -475,6 +490,25 @@ class WebAdminIntegrationTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(HTTPError) as err:
             await self._post("/api/pets/test-pet/mapping", {"states": {"working": "nonexistent-clip"}})
         self.assertEqual(err.exception.code, 400)
+
+    async def test_dashboard_does_not_expose_tactile_request_content(self):
+        self.bridge.touch_connected = True
+        self.bridge.registry.update({
+            "v": 1, "source": "project-a", "sequence": 1,
+            "state": "permission", "label": "Approval pending",
+            "pending_permissions": 1, "pending_forms": 0, "active_sessions": 1,
+            "choice": {"kind": "permission", "id": "per_1",
+                       "title": "Private scope - ALWAYS: secret/*.py",
+                       "options": ["REFUSE", "ONCE", "ALWAYS"]},
+        })
+        status, raw = await self._get("/api/dashboard")
+        self.assertEqual(status, 200)
+        self.assertNotIn(b"secret/", raw)
+        self.assertNotIn(b"per_1", raw)
+        effective = json.loads(raw)["bridge"]["effective_state"]
+        self.assertEqual(effective["state"], "permission")
+        self.assertNotIn("choice", effective)
+        self.assertNotIn("source", effective)
 
 
 if __name__ == "__main__":

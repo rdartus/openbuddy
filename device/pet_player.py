@@ -54,8 +54,10 @@ class PetPlayer:
             self.animations = manifest["animations"]
             self.states = manifest["states"]
             self.buffer = bytearray(self.frame_bytes)
-            self.x = 8 + (104 - self.width) // 2
-            self.y = 35 + (104 - self.height) // 2
+            stage_x, stage_y, stage_w, stage_h = cfg.UI_PET_STAGE
+            self.scale = cfg.UI_PET_SCALE
+            self.x = stage_x + (stage_w - self.width * self.scale) // 2
+            self.y = stage_y + (stage_h - self.height * self.scale) // 2
             self.available = True
             print("Pet ready:", self.pet_id, self.width, self.height, "RAM", self.frame_bytes)
         except (OSError, ValueError, TypeError, KeyError, MemoryError) as error:
@@ -69,13 +71,16 @@ class PetPlayer:
         if (type(width) is not int or type(height) is not int
                 or not 1 <= width <= 104 or not 1 <= height <= 104):
             raise ValueError("Pet dimensions exceed the display stage")
-        if manifest.get("background") != [8, 12, 20]:
+        if manifest.get("background") != list(cfg.UI_BACKGROUND):
             raise ValueError("Pet background does not match the UI")
         animations, states = manifest.get("animations"), manifest.get("states")
         if (not isinstance(animations, dict) or not 1 <= len(animations) <= 16
                 or not isinstance(states, dict)):
             raise ValueError("Invalid pet animation table")
+        # Standby is a bridge-only display state; existing packs use idle for it.
         for state in STATES + ("offline", "pairing"):
+            if state == "standby":
+                continue
             if states.get(state) not in animations:
                 raise ValueError("Pet is missing a required state")
         for name, animation in animations.items():
@@ -124,7 +129,11 @@ class PetPlayer:
                 self.cached = True
                 self.next_due = time.ticks_add(now, self.animation["frame_ms"])
             started = time.ticks_us()
-            self.lcd.blit(self.buffer, self.x, self.y, self.width, self.height)
+            if self.scale == 1:
+                self.lcd.blit(self.buffer, self.x, self.y, self.width, self.height)
+            else:
+                self.lcd.blit(self.buffer, self.x, self.y, self.width, self.height,
+                              scale=self.scale)
             self.draw_us += time.ticks_diff(time.ticks_us(), started)
             self.draws += 1
             return True

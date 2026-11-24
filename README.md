@@ -1,8 +1,17 @@
 # OpenBuddy
 
-**L'activité d'OpenCode, visible en un coup d'œil.** Un compagnon physique sur
-**Waveshare ESP32-C6-LCD-1.47** : écran paysage 320×172, pet animé et halo RVB,
-synchronisés en **Local USB** ou en **Bluetooth**.
+**L'activité d'OpenCode, visible en un coup d'œil.** Un compagnon physique pour
+deux cartes ESP32 Waveshare : **C6-LCD-1.47** (écran paysage 320×172, halo RVB)
+et **S3-Touch-AMOLED-1.64 v2** (écran paysage 456×280). Le pet animé et l'état
+sont synchronisés en **Local USB** ou en **Bluetooth**.
+
+Portage **Waveshare ESP32-S3-Touch-AMOLED-1.64 v2 (280x456, CS GPIO46, 16 Mo flash,
+8 Mo PSRAM)** : pet **en flash interne par défaut ou sur TF FAT32 sélectionnée
+explicitement**, sans repli automatique, avec un firmware
+experimental integrant le module natif **`amoled_qspi`**, pas le `.bin` MicroPython
+officiel. **[Installation Windows ESP32-S3 : suivre ce README](README-ESP32-S3-Windows.md).**
+Le QMI8658 choisit automatiquement entre les deux sens paysage à 180°, sans mode
+portrait. Ce portage reste a valider sur la carte reelle.
 
 ![Démonstration OpenBuddy : les événements OpenCode synchronisent les écrans et le pet Goku en Local USB ou Bluetooth.](docs/media/openbuddy-demo.gif)
 
@@ -21,7 +30,8 @@ OpenCode v2 → plugin d'événements → pont Python local → Local USB ou Blu
 
 Le plugin écoute les **événements OpenCode v2**, suit les sessions et les demandes
 en attente, puis transmet un état au pont Python. Le pont envoie cet état au buddy ;
-le firmware choisit l'écran, la couleur du halo et l'animation lue sur microSD.
+le firmware choisit l'écran, l'accent coloré (halo RVB sur C6) et l'animation
+lue sur microSD C6, ou sur flash interne / TF S3 selon l'installation.
 Les images ne sont pas envoyées en continu par le transport.
 
 | Dans OpenCode | Sur OpenBuddy |
@@ -41,9 +51,15 @@ Sur Windows, **sons et notifications visuelles** complètent le compagnon pour l
 permissions, questions, succès et erreurs. `--mute` coupe seulement les sons ;
 `--no-notifications` coupe seulement les notifications Windows.
 
-**Seuls des états et libellés génériques sont transmis** : pas de prompts, code,
-texte de question ou résultats d'outils. Les boutons ne valident aucune autorisation
-automatiquement : les réponses restent dans OpenCode.
+Sur le **S3 v2 tactile**, une question à choix unique ou une permission complète
+apparaît à droite du pet : glisser horizontalement pour changer de proposition,
+puis maintenir un appui stable au moins une seconde dans le cadre du choix pour
+valider. Un toucher bref ne valide rien. Le texte trop long défile. Les autres formulaires restent
+à traiter dans OpenCode. Pour une permission, les choix sont **Refuser**,
+**Autoriser une fois** et **Toujours autoriser** ; le dernier enregistre une règle
+persistante. Le C6 n'est pas tactile. Le texte de la demande et les choix sont
+transmis localement au pont et au S3 seulement quand l'écran peut les afficher ;
+aucun contenu d'outil ou prompt libre n'est envoyé.
 
 ## Démarrer le pont et l'interface web
 
@@ -93,30 +109,119 @@ Désinstallation propre : `.\.venv\Scripts\python.exe -m pc.install_alias --unin
 | | Local USB | Bluetooth |
 |---|---|---|
 | Connexion | Câble USB-C **de données**, port série | Bluetooth LE : service GATT OpenBuddy + clavier HID |
-| Démarrage du pont | `--serial auto` ou `--serial COMx` | Sans option de transport |
+| Démarrage du pont | Par défaut, `--serial auto` ou `--serial COMx` | `--ble` ou `--address` (`bleak` optionnel requis) |
 | Appairage | Aucun | BOOT long, vérification du code, puis **deuxième appui court** |
-| Écran, pet et halo | Identiques | Identiques |
-| Boutons et clavier | Pas de remontée des boutons ni de HID sur ce transport | BOOT sert à l'appairage (appui long, puis confirmation du code) ; pas d'événement bouton ni de F13 |
+| Écran et pet (halo RVB sur C6) | Identiques pour une même carte | Identiques pour une même carte |
+| Boutons et clavier | Pas de remontée de BOOT ni de HID ; tactile S3 disponible | BOOT sert à l'appairage (appui long, puis confirmation du code) ; tactile S3 disponible |
 
-Le mode USB requiert le **firmware 0.3.0** ou plus (0.4.0 pour le quota). Le firmware conserve aussi le BLE :
+Le mode USB requiert le **firmware 0.3.0** ou plus (0.4.0 pour le quota,
+0.5.0 pour les réponses tactiles S3). Le firmware conserve aussi le BLE :
 le choix du transport se fait au lancement du pont. En USB, un seul outil peut
 utiliser le port série à la fois. En Bluetooth, le buddy accepte un seul hôte à
 la fois. Les autorisations USB/Bluetooth du système restent applicables.
 
+## Premier setup de l'ESP32
+
+Une carte neuve contient généralement une démonstration constructeur, **pas
+MicroPython ni OpenBuddy**. `pc.deploy` copie les fichiers Python mais n'installe
+pas MicroPython : il faut donc préparer la carte une première fois.
+
+| Carte | Firmware requis | Profil `pc.deploy --board` |
+|---|---|---|
+| Waveshare ESP32-C6-LCD-1.47 non tactile | MicroPython officiel `ESP32_GENERIC_C6` 1.29.0 | `waveshare-c6-lcd-147` |
+| Waveshare ESP32-S3-Touch-AMOLED-1.64 **v2** | Build OpenBuddy MicroPython 1.29.0 + `amoled_qspi` API v4, `OPENBUDDY_S3_AMOLED_V2`, PSRAM octale ([guide](docs/s3-qspi-build.md)) | `waveshare-s3-amoled-164-v2` |
+
+**Ne pas utiliser le firmware C6 sur le S3**, ni la variante S3 sans PSRAM octale
+pour cette carte S3R8. Vérifier la référence exacte du matériel avant de commencer.
+
+Pour le **S3 AMOLED v2, avec ou sans microSD**, suivre uniquement le
+**[README Windows ESP32-S3](README-ESP32-S3-Windows.md)** : preparation du PC,
+telechargement du build, flashage, test ecran, pet en flash et lancement USB.
+Ce parcours s'applique aussi si MicroPython officiel est deja flashe.
+Les instructions C6 ci-dessous ne concernent pas le S3.
+
+Pour le **C6**, depuis la racine du dépôt dans PowerShell :
+
+```powershell
+uv python install 3.13
+uv venv --python 3.13
+uv pip install --python .venv\Scripts\python.exe -r pc\requirements.txt -r pc\requirements-assets.txt esptool
+uv run python -m serial.tools.list_ports -v
+$Port = "COM5" # Remplacer par le port detecte
+```
+
+Télécharger le `.bin` MicroPython 1.29.0 depuis
+<https://micropython.org/download/ESP32_GENERIC_C6/> dans la racine du dépôt.
+Pour entrer en bootloader : maintenir BOOT, appuyer puis relâcher RST, puis relâcher
+BOOT. Utiliser un câble USB-C **de données** et vérifier le port après chaque changement
+de mode. Fermer tout pont, moniteur série ou autre outil qui utilise ce port.
+
+**Première installation uniquement : `erase-flash` efface la démonstration usine,
+les fichiers et les appairages. Sauvegarder les données utiles avant.**
+
+```powershell
+uv run python -m esptool --chip esp32c6 --port $Port flash-id
+uv run python -m esptool --chip esp32c6 --port $Port erase-flash
+uv run python -m esptool --chip esp32c6 --port $Port --baud 460800 write-flash 0 ESP32_GENERIC_C6-20260824-v1.29.0.bin
+```
+
+Appuyer sur RST, relister les ports et ajuster `$Port` si nécessaire, puis :
+
+```powershell
+uv run python -m serial.tools.list_ports -v
+uv run python -m pc.deploy --port $Port --board waveshare-c6-lcd-147
+```
+
+Le robot intégré doit apparaître, même sans pack d'animations. Pour installer le pet,
+voir [les animations](docs/animations.md). Pour une mise à jour ultérieure, relancer
+seulement `pc.deploy` : **ne pas refaire `erase-flash`**. Aucun besoin d'activer le
+venv ni de modifier la politique d'exécution PowerShell avec ces commandes.
+
 ## Installer depuis le dépôt
 
-Prérequis : **Windows 10/11, CPython 3.11–3.14 x64, OpenCode v2** en service
+Prérequis : **Windows 10/11, uv, OpenCode v2** en service
 local géré. Le plugin et le pont tournent sur la même machine qu'OpenCode.
-Le plugin compilé est fourni : **Node/npm n'est pas nécessaire pour l'utiliser**.
+`uv` installe ici CPython 3.13 et gère les dépendances dans `.venv`.
+Avec un kit contenant le plugin compilé, Node/npm n'est pas nécessaire pour
+l'utiliser. Un clone des sources peut nécessiter sa reconstruction ci-dessous.
+Si la carte est neuve, commencer par le [premier setup](#premier-setup-de-lesp32).
 
 Depuis PowerShell :
+
+Installer [uv](https://docs.astral.sh/uv/getting-started/installation/) si nécessaire
+(installation utilisateur, sans administrateur), puis rouvrir PowerShell :
+
+```powershell
+powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | iex"
+```
+
+La politique d'exécution n'est contournée que pour ce processus d'installation,
+pas modifiée globalement. Depuis la racine du dépôt, ou après clonage :
 
 ```powershell
 git clone https://github.com/Nespouique/openbuddy.git
 Set-Location openbuddy
-python -m venv .venv
-.\.venv\Scripts\python.exe -m pip install -r pc\requirements.txt
-.\.venv\Scripts\python.exe -m pc.install_plugin
+uv python install 3.13
+uv venv --python 3.13
+uv pip install --python .venv\Scripts\python.exe -r pc\requirements.txt
+```
+
+Si `.venv` est déjà préparé, ne pas le recréer. Les commandes utilisent
+`uv run python`, sans activation PowerShell. Le premier setup
+C6 utilise également uv ; installer uv avant de le suivre.
+
+Si `integration\openbuddy\dist\index.js` est absent, installer Node.js avec npm,
+puis générer le plugin :
+
+```powershell
+npm --prefix integration/openbuddy ci --ignore-scripts
+npm --prefix integration/openbuddy run build
+```
+
+Installer ensuite le plugin :
+
+```powershell
+uv run python -m pc.install_plugin
 ```
 
 Dans OpenCode, utiliser `/reload` si nécessaire. Pour mettre à jour une installation
@@ -129,9 +234,9 @@ Pour une copie du dépôt déjà présente, utiliser `git pull` au lieu de la cl
 Brancher le câble de données, puis lancer depuis la racine du dépôt :
 
 ```powershell
-.\.venv\Scripts\python.exe -m pc.buddy --serial auto scan
-.\.venv\Scripts\python.exe -m pc.buddy --serial auto status
-.\.venv\Scripts\python.exe -m pc.opencode --serial auto
+uv run python -m pc.buddy --serial auto scan
+uv run python -m pc.buddy --serial auto status
+uv run python -m pc.opencode --serial auto
 ```
 
 `auto` sélectionne l'unique port Espressif ; utiliser `--serial COMx` s'il y en a
@@ -146,16 +251,18 @@ le pont puis lancer `.\.venv\Scripts\python.exe -m pc.webtest --port auto`
 (`http://127.0.0.1:8765/`). Ne pas lancer simultanément deux outils sur le même
 port série (`pc.opencode`, `pc.webtest`, `pc.buddy`, `mpremote`).
 
-Si le firmware doit être mis à jour, arrêter d'abord le pont et les autres outils
-série, puis :
+Pour mettre a jour les fichiers Python, arreter d'abord le pont et les autres
+outils serie, puis :
 
 ```powershell
-.\.venv\Scripts\python.exe -m pip install -r pc\requirements-assets.txt
-.\.venv\Scripts\python.exe -m pc.deploy --port COMx
+uv pip install --python .venv\Scripts\python.exe -r pc\requirements-assets.txt
+uv run python -m pc.deploy --port COMx
 ```
 
 Remplacer `COMx` par le port détecté. Le déploiement ne formate pas la carte et
 conserve la SD et les clés Bluetooth. [Guide USB détaillé](distribution/workplace/README-usb.md).
+Sur S3, le firmware natif doit deja etre compatible ; `pc.deploy` ne le remplace
+pas. Pour changer le module natif, suivre le [guide QSPI](docs/s3-qspi-build.md).
 
 ### Bluetooth
 
@@ -164,9 +271,10 @@ BOOT environ 3 s. Comparer les codes, confirmer dans Windows et faire un
 **deuxième appui court sur BOOT**. Déconnecter tout ancien hôte à portée.
 
 ```powershell
-.\.venv\Scripts\python.exe -m pc.buddy scan
-.\.venv\Scripts\python.exe -m pc.buddy status
-.\.venv\Scripts\python.exe -m pc.opencode
+uv pip install --python .venv\Scripts\python.exe -r distribution\workplace\requirements-ble.txt
+uv run python -m pc.buddy scan
+uv run python -m pc.buddy status
+uv run python -m pc.opencode --ble
 ```
 
 Être reconnu comme clavier ne garantit pas l'accès au service GATT personnalisé.
@@ -177,8 +285,8 @@ BOOT environ 3 s. Comparer les codes, confirmer dans Windows et faire un
 Dans un autre terminal, depuis la même racine :
 
 ```powershell
-.\.venv\Scripts\python.exe -m pc.opencode status
-.\.venv\Scripts\python.exe -m pc.opencode stop
+uv run python -m pc.opencode status
+uv run python -m pc.opencode stop
 ```
 
 `status` indique notamment `sources`, `usb_connected` / `ble_connected` et
@@ -187,11 +295,16 @@ Dans un autre terminal, depuis la même racine :
 
 ## Pet et matériel
 
-Le pet est lu sur la **microSD**, en RGB565, avec un seul buffer d'image en RAM.
+Le pet est lu sur la **microSD ou la flash interne**, en RGB565, avec un seul buffer d'image en RAM.
+Sur le S3 AMOLED, l'installation peut se faire entièrement sans microSD ou
+mettre le pet sur la TF en gardant les fichiers Python en flash.
 Sans pack installé, un robot intégré prend le relais. Les sprites et les packs
 du pet ne sont pas fournis dans le dépôt ou les kits : les visuels ci-dessus sont
 une démonstration de l'affichage, pas un pack d'assets. Le bouton BOOT (appui court)
 retourne l'affichage de 180° ; l'orientation choisie est mémorisée.
+Sur le S3 v2, l'accéléromètre adapte aussi ce sens automatiquement, après 500 ms
+de stabilité ; à plat ou en position verticale, la dernière vue est conservée.
+BOOT apporte une correction de 180° au capteur jusqu'au redémarrage.
 
 - [Préparer et installer une animation](docs/animations.md)
 - [Afficher le quota du fournisseur (ex. GitHub Copilot)](docs/opencode-events.md#quota-du-fournisseur)
@@ -209,27 +322,38 @@ ne contiennent pas le wheelhouse hors ligne.
 Reconstruction locale des kits :
 
 ```powershell
-python tools/package_workplace.py --variant usb --download-wheels
-python tools/package_workplace.py --variant bluetooth --download-wheels
+uv run python tools/package_workplace.py --variant usb --download-wheels
+uv run python tools/package_workplace.py --variant bluetooth --download-wheels
 ```
 
 Un kit existant n'est remplacé qu'avec `--replace`.
 
 ## Fichiers
 
+`device/` regroupe l'application MicroPython commune ; **le dossier du dépôt
+n'est pas reproduit sur l'ESP32** : `pc.deploy` copie les modules directement
+à la racine du système de fichiers de la carte. Le profil de `board_config.py`
+sélectionne l'écran, les broches, l'orientation et le stockage. Le C6 utilise
+MicroPython officiel ; `firmware/` contient le module C et la carte de build
+du firmware S3 v2. Le `.bin` compilé est livré séparément dans `dist/s3-qspi/`.
+
 | Chemin | Rôle |
 |---|---|
-| `c6lcd/board_config.py` | Broches et géométrie, source unique |
-| `c6lcd/main.py`, `companion.py` | Démarrage et boucle firmware |
-| `c6lcd/buddy_ble.py` | HID, GATT, appairage et clés |
-| `c6lcd/buddy_usb.py` | Protocole d'états sur le port série USB |
-| `c6lcd/buddy_ui.py` | Écran 320×172 et halo |
-| `c6lcd/buddy_protocol.py` | Protocole partagé PC / ESP32 |
-| `c6lcd/shared_spi.py`, `sdcard_spi.py`, `storage.py` | Bus partagé et SD en lecture seule |
-| `c6lcd/pet_player.py` | Lecteur RGB565, une image en RAM |
-| `c6lcd/orientation_demo.py` | Ancienne démo conservée |
+| `device/board_config.py` | Broches et géométrie, source unique |
+| `device/pet_format.py` | Fond noir et format du pack partagés entre PC, C6 et S3 |
+| `device/main.py`, `companion.py` | Démarrage et boucle firmware |
+| `device/buddy_ble.py` | HID, GATT, appairage et clés |
+| `device/buddy_usb.py` | États et choix tactiles sur le port série USB |
+| `device/ft3168.py`, `buddy_prompt.py` | Tactile et choix affichés sur le S3 v2 |
+| `device/st7789.py`, `co5300.py` | Pilotes écran C6 et S3 (QSPI natif) |
+| `device/buddy_ui.py` | Interface 320×172 C6 / 456×280 S3 ; halo RVB C6 |
+| `device/buddy_protocol.py` | Protocole partagé PC / ESP32 |
+| `device/shared_spi.py`, `sdcard_spi.py`, `storage.py` | Bus partagé et SD en lecture seule |
+| `device/pet_player.py` | Lecteur RGB565, une image en RAM |
+| `device/orientation_demo.py` | Ancienne démo conservée |
+| `firmware/amoled_qspi/`, `firmware/boards/` | Module C et configuration du firmware S3 |
 | `pc/buddy.py` | Diagnostic BLE et USB en Python |
-| `pc/opencode.py` | Pont événements locaux → BLE/USB/virtuel, authentifié et en lecture seule |
+| `pc/opencode.py` | Pont événements locaux → BLE/USB/virtuel et réponses tactiles S3, authentifié |
 | `pc/web_admin.py` | Console web locale d'administration, aperçu du pet et contrôle du pont |
 | `pc/pet_store.py` | Découverte des packs RGB565 locaux et décodage sans Pillow |
 | `pc/pet_overlay.py` | Fenêtre flottante toujours visible (« Keep the pet visible ») en `tkinter` |
@@ -252,19 +376,35 @@ Installer aussi `pc/requirements-assets.txt` pour Pillow et les outils de déplo
 Les tests n'accèdent pas au matériel et n'exigent pas les images Goku :
 
 ```powershell
-python -m unittest discover -s tests -v
+uv pip install --python .venv\Scripts\python.exe -r pc\requirements-dev.txt
+uv run python -m tools.check_micropython
+uv run python -m unittest discover -s tests -v
 npm --prefix integration/openbuddy test
 npm --prefix integration/openbuddy run typecheck
 ```
+
+Le contrôle MicroPython utilise obligatoirement `mpy-cross` **1.29.0** sur tous
+les fichiers installés par `pc.deploy` ; un compilateur absent, une syntaxe
+incompatible ou une API/importation Python non portable connue fait échouer les
+tests. La CI Linux exécute aussi le protocole et les choix sur le port Unix de
+MicroPython 1.29. Les mocks CPython ne suffisent
+donc plus à faire passer ces régressions, mais ni ces contrôles ni le port Unix ne
+remplacent les tests réels sur ESP32 (matériel, BLE, écran et module QSPI natif).
 
 Node/npm est utilisé uniquement pour développer/reconstruire le plugin :
 `npm --prefix integration/openbuddy ci`, puis `npm --prefix integration/openbuddy run build`.
 Ne pas modifier le bundle compilé à la main.
 
-Pour régénérer le visuel du README depuis un pack déjà converti localement :
+Exception native S3 : la compilation C requiert ESP-IDF, hors environnement uv.
+Le [guide QSPI](docs/s3-qspi-build.md#compilation-linux-sans-docker) centralise
+la compilation Linux et les tests C sur hote. Ni ces tests ni les tests Python
+simules ne valident l'affichage reel.
+
+Pour régénérer le visuel du README depuis un pack déjà converti localement sur
+fond noir (les anciens packs à fond sombre ne correspondent plus au firmware) :
 
 ```powershell
-python tools/build_readme_demo.py --pet-dir build/pets/super-saiyan-goku-combat
+uv run python tools/build_readme_demo.py --pet-dir build/pets/super-saiyan-goku-combat-black
 ```
 
 Le générateur utilise `BuddyUI`, `PetPlayer` et la police du firmware ; il ne se

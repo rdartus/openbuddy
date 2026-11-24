@@ -6,17 +6,17 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "c6lcd"))
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "device"))
 import pet_player
-from c6lcd.buddy_protocol import STATES
+from device.buddy_protocol import STATES
 
 
 class FakeLCD:
     def __init__(self):
         self.frames = []
 
-    def blit(self, buffer, x, y, width, height):
-        self.frames.append((bytes(buffer), x, y, width, height))
+    def blit(self, buffer, x, y, width, height, scale=1):
+        self.frames.append((bytes(buffer), x, y, width, height, scale))
 
 
 class PlayerTests(unittest.TestCase):
@@ -30,7 +30,7 @@ class PlayerTests(unittest.TestCase):
         self.selection.write_text('{"pet":"test-pet"}', encoding="utf-8")
         self.manifest = {
             "version": 1, "id": "test-pet", "format": "RGB565-BE",
-            "width": 2, "height": 2, "background": [8, 12, 20],
+            "width": 2, "height": 2, "background": [0, 0, 0],
             "states": {state: "idle" for state in STATES + ("offline", "pairing")},
             "animations": {"idle": {"file": "idle.rgb565", "frames": 2,
                                     "frame_ms": 260, "bytes": 16}},
@@ -65,7 +65,47 @@ class PlayerTests(unittest.TestCase):
         for now in (0, 260, 520):
             self.assertTrue(player.draw("idle", now))
         self.assertEqual([frame[0] for frame in self.lcd.frames],
-                         [b"\xf8\x00" * 4, b"\x00\x1f" * 4, b"\xf8\x00" * 4])
+                          [b"\xf8\x00" * 4, b"\x00\x1f" * 4, b"\xf8\x00" * 4])
+        self.assertEqual(self.lcd.frames[0][1:], (59, 86, 2, 2, 1))
+
+    def test_existing_pack_without_standby_uses_idle_without_reinstallation(self):
+        self.manifest["states"].pop("standby")
+        self.save_manifest()
+        player = self.player()
+        self.assertTrue(player.available)
+        self.assertTrue(player.draw("standby", 0))
+        self.assertEqual(self.lcd.frames[-1][0], b"\xf8\x00" * 4)
+
+    def test_s3_profile_scales_pet_without_changing_pack_or_frame_buffer(self):
+        with patch.object(pet_player.cfg, "UI_PET_SCALE", 2), \
+                patch.object(pet_player.cfg, "UI_PET_STAGE", (8, 36, 208, 208)):
+            player = self.player()
+            self.assertEqual(len(player.buffer), 8)
+            self.assertEqual((player.x, player.y), (110, 138))
+            self.assertTrue(player.draw("idle", 0))
+            self.assertEqual(self.lcd.frames[0], (b"\xf8\x00" * 4, 110, 138, 2, 2, 2))
+
+    def test_same_black_pack_plays_on_c6_and_s3_without_reconversion(self):
+        c6 = self.player()
+        self.assertTrue(c6.draw("idle", 0))
+        c6_frame = self.lcd.frames[-1]
+        with patch.object(pet_player.cfg, "UI_PET_SCALE", 2), \
+                patch.object(pet_player.cfg, "UI_PET_STAGE", (8, 36, 208, 208)):
+            s3 = self.player()
+            self.assertTrue(s3.draw("idle", 0))
+        s3_frame = self.lcd.frames[-1]
+        self.assertEqual(c6_frame[0], s3_frame[0])
+        self.assertEqual((c6_frame[-1], s3_frame[-1]), (1, 2))
+
+    def test_both_profiles_reject_legacy_dark_pack_until_recomposited_on_black(self):
+        self.manifest["background"] = [8, 12, 20]
+        self.save_manifest()
+        old = self.player()
+        self.assertFalse(old.available)
+        self.assertIn("background", old.error)
+        self.manifest["background"] = [0, 0, 0]
+        self.save_manifest()
+        self.assertTrue(self.player().available)
 
     def test_force_redraw_reuses_cached_frame_without_advancing(self):
         player = self.player()

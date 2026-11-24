@@ -1,6 +1,40 @@
 # Matériel OpenBuddy
 
-## Carte principale
+Le code MicroPython commun aux deux cartes est dans `device/` ; `board_config.py`
+choisit le matériel par profil persistant ou, sur le build S3 dédié, par identité
+figée. `pet_format.py` définit le fond noir et la taille de l'image du pack,
+communs au C6 et au S3 ; seule la mise à l'échelle et le stockage changent.
+`pc.deploy` installe ces modules à la racine de l'ESP32 : aucun dossier
+`device/` n'est créé sur la carte. `firmware/` regroupe le module C QSPI et
+la carte de compilation du S3 ; le `.bin` produit est dans `dist/s3-qspi/`.
+
+| Carte | Profil | Affichage et stockage du pet |
+|---|---|---|
+| ESP32-C6-LCD-1.47 | `waveshare-c6-lcd-147` | ST7789 320×172, microSD |
+| ESP32-S3-Touch-AMOLED-1.64 v2 | `waveshare-s3-amoled-164-v2` | QSPI 456×280, flash interne ou TF |
+
+La Waveshare **ESP32-S3-Touch-AMOLED-1.64 v2** dispose aussi d'un profil dedie,
+d'un pilote Python `co5300` et du stockage des animations en flash interne ou
+sur carte TF FAT32.
+Elle exige un firmware MicroPython personnalise avec **`amoled_qspi` natif** :
+le `.bin` officiel et un simple `pc.deploy` ne suffisent pas. Les anciennes demos
+Waveshare nomment le pilote SH8601, les nouvelles CO5300 ; cela ne confirme pas
+une detection du silicium. Les pixels passent en QSPI sur D0..D3, pas en SPI simple.
+SPI2_HOST est reserve au module natif : ne pas creer `machine.SPI(1)` en parallele ;
+la SD utilise un bus separe. Voir le [guide S3 AMOLED](s3-amoled.md) pour le brochage
+et le stockage, et le [guide firmware QSPI](s3-qspi-build.md) pour l'artefact,
+son hash, le reflashage et le test plein ecran suivi d'un reset avant les animations.
+Ce portage est experimental et reste a valider sur materiel. Les regles C6
+ci-dessous ne changent pas : son firmware reste officiel.
+Le profil v2 utilise **CS GPIO46** et la flash interne par défaut pour le pet ;
+la TF est un choix explicite, sans repli automatique si la flash est pleine.
+Voir le guide S3.
+Sur la v2, le QMI8658 utilise SDA=47, SCL=48, adresse `0x6B` et choisit entre les
+deux sens paysage à 180° avec filtrage, sans mode portrait. Mesures sur une carte
+v2 : la gravité est sur Y en paysage (positif avec USB-C à gauche, négatif à
+droite) ; le C6 n'est pas modifié.
+
+## ESP32-C6-LCD-1.47
 
 **Waveshare ESP32-C6-LCD-1.47, version non tactile**, écran ST7789 172×320,
 LED RVB WS2812 et emplacement microSD. Ne pas confondre avec la variante Touch.
@@ -40,8 +74,8 @@ en continu depuis le PC.
 Les numéros de port série changent selon le PC :
 
 ```powershell
-python -m serial.tools.list_ports -v
-python -m pc.deploy --port COMX
+uv run python -m serial.tools.list_ports -v
+uv run python -m pc.deploy --port COMX
 ```
 
 Remplacer `COMX` par le port détecté. L'outil copie les fichiers du firmware sans
@@ -59,7 +93,7 @@ après l'arrêt du pont Python : déconnecter l'ancien hôte avant un nouvel app
 
 Le firmware **0.3.0** accepte également les états par le port USB-Serial/JTAG
 intégré, sans appairage Bluetooth. Le pont se lance avec
-`python -m pc.opencode --serial auto` (ou `--serial COMx`).
+`uv run python -m pc.opencode --serial auto` (ou `--serial COMx`).
 Les boutons et le clavier HID ne sont pas exposés par ce transport. Un seul outil
 peut ouvrir le port série à la fois : arrêter le pont avant un déploiement, un
 transfert d'assets ou une session REPL. L'USB doit être autorisé sur le poste.

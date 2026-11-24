@@ -7,9 +7,9 @@ import json
 import sys
 import threading
 
-from c6lcd.buddy_protocol import (CHUNK_SIZE, DEVICE_NAME, RX_UUID,
-                                  SERVICE_UUID, STATES, TX_UUID, VERSION,
-                                  Decoder, encode, validate_command)
+from device.buddy_protocol import (CHUNK_SIZE, DEVICE_NAME, RX_UUID, SERVICE_UUID,
+                                  STATES, TX_UUID, VERSION, Decoder, encode,
+                                  validate_command)
 
 SERIAL_VID = 0x303A  # Espressif USB-Serial-JTAG
 

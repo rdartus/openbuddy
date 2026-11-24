@@ -152,10 +152,10 @@ python -m serial.tools.list_ports -v
 python -m pc.deploy --port COM9
 ```
 
-La démo d'orientation reste dans `c6lcd/orientation_demo.py`. Pour y revenir :
+La démo d'orientation reste dans `device/orientation_demo.py`. Pour y revenir :
 
 ```bash
-python -m mpremote connect COM9 fs cp c6lcd/orientation_demo.py :main.py + reset
+python -m mpremote connect COM9 fs cp device/orientation_demo.py :main.py + reset
 ```
 
 La SD est montée **en lecture seule** par un pilote Python et partage l'objet SPI

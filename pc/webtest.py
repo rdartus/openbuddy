@@ -6,7 +6,7 @@ import json
 import threading
 import time
 
-from c6lcd.buddy_protocol import VERSION, encode, validate_command
+from device.buddy_protocol import VERSION, encode, validate_command
 from pc.buddy import find_serial_port, open_serial
 
 

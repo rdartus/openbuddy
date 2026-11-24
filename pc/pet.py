@@ -13,10 +13,13 @@ import tempfile
 from urllib.parse import urlparse
 from urllib.request import Request, urlopen
 
+from device.pet_format import BACKGROUND, FRAME_SIZE as OUTPUT_SIZE
+
 DEFAULT_PET = "super-saiyan-goku-combat"
-BACKGROUND = (8, 12, 20)
+LEGACY_BACKGROUND = (8, 12, 20)
 CELL = (192, 208)
-OUTPUT_SIZE = (96, 104)
+INSTALL_TIMEOUT = 600
+RESET_TIMEOUT = 20
 # Codex Pets src/domain/config.ts, blob 12403682002a5f4415c65e1514317c7e978161bc.
 # A clip is a sequence of (atlas row, frame count) segments played back to back.
 # Rows 9-10 only exist in v2 atlases: sixteen head-turn frames of the idle pose.
@@ -103,6 +106,14 @@ def parse_codex_pet_url(url_or_id):
         if match:
             return valid_id(match.group(1))
     raise ValueError("Impossible d'extraire l'identifiant du pet depuis cette URL Codex Pets")
+
+
+def pack_output(pet_id, background=BACKGROUND):
+    """Use one black pack for every board, without overwriting legacy dark packs."""
+    valid_id(pet_id)
+    if background not in (BACKGROUND, LEGACY_BACKGROUND):
+        raise ValueError("Unsupported pet background")
+    return Path("build/pets") / (pet_id + ("-black" if background == BACKGROUND else ""))
 
 
 def download(url, destination, limit):
@@ -233,11 +244,14 @@ def write_pack_from_clips(output, pet_id, source, clip_payloads, states=None, fr
     return manifest
 
 
-def convert(sheet_path, output, pet_id, source, frame_ms=None, force=False, states=None):
+def convert(sheet_path, output, pet_id, source, frame_ms=None, force=False, states=None,
+            background=BACKGROUND):
     from PIL import Image, ImageDraw
 
     valid_id(pet_id)
     output = Path(output)
+    if background not in (BACKGROUND, LEGACY_BACKGROUND):
+        raise ValueError("Unsupported pet background")
     if frame_ms is not None and not 100 <= frame_ms <= 2000:
         raise ValueError("Frame duration must be between 100 and 2000 ms")
     if output.exists() and any(output.iterdir()) and not force:
@@ -258,10 +272,10 @@ def convert(sheet_path, output, pet_id, source, frame_ms=None, force=False, stat
     manifest = {
         "version": 1, "id": pet_id, "format": "RGB565-BE",
         "width": OUTPUT_SIZE[0], "height": OUTPUT_SIZE[1],
-        "background": list(BACKGROUND), "states": resolved_states,
+        "background": list(background), "states": resolved_states,
         "source": source, "animations": {},
     }
-    preview = Image.new("RGB", (len(clips) * 112, 128), BACKGROUND)
+    preview = Image.new("RGB", (len(clips) * 112, 128), background)
     draw = ImageDraw.Draw(preview)
     for index, (name, clip) in enumerate(clips.items()):
         path = output / (name + ".rgb565")
@@ -273,7 +287,7 @@ def convert(sheet_path, output, pet_id, source, frame_ms=None, force=False, stat
                 for frame in range(segment):
                     box = (frame * CELL[0], row * CELL[1], (frame + 1) * CELL[0], (row + 1) * CELL[1])
                     cell = sheet.crop(box).resize(OUTPUT_SIZE, Image.Resampling.NEAREST)
-                    opaque = Image.new("RGBA", OUTPUT_SIZE, BACKGROUND + (255,))
+                    opaque = Image.new("RGBA", OUTPUT_SIZE, background + (255,))
                     opaque.alpha_composite(cell)
                     data = rgb565(opaque)
                     handle.write(data)
@@ -300,8 +314,10 @@ def convert(sheet_path, output, pet_id, source, frame_ms=None, force=False, stat
 
 def convert_command(args):
     pet_id, sheet, source, _pet = fetch_codex_pet(args.pet)
-    output = Path(args.output) if args.output else Path("build/pets") / pet_id
-    manifest = convert(sheet, output, pet_id, source, args.frame_ms, args.force)
+    background = BACKGROUND if args.background == "black" else LEGACY_BACKGROUND
+    output = Path(args.output) if args.output else pack_output(pet_id, background)
+    manifest = convert(sheet, output, pet_id, source, args.frame_ms, args.force,
+                       background=background)
     total = sum(item["bytes"] for item in manifest["animations"].values())
     print("Pack:", output)
     print("%d animations, %d frames, %d bytes; RGB565-BE 96x104" % (
@@ -310,6 +326,9 @@ def convert_command(args):
 
 
 def install(args):
+    timeout = getattr(args, "timeout", INSTALL_TIMEOUT)
+    if timeout <= 0:
+        raise ValueError("--timeout must be positive")
     folder = Path(args.pack).resolve()
     manifest_path = folder / "manifest.json"
     if manifest_path.stat().st_size > 8192:
@@ -319,32 +338,54 @@ def install(args):
     if manifest.get("version") != 1 or manifest.get("format") != "RGB565-BE":
         raise ValueError("Unsupported pack")
     filenames = []
+    sizes = []
+    if not isinstance(manifest["animations"], dict) or not 1 <= len(manifest["animations"]) <= 16:
+        raise ValueError("Invalid animation table")
     for animation in manifest["animations"].values():
         name = animation["file"]
         if not re.fullmatch(r"[a-z0-9-]+\.rgb565", name):
             raise ValueError("Unsafe pack filename")
         path = folder / name
+        if type(animation["bytes"]) is not int or not 0 < animation["bytes"] <= 104 * 104 * 2 * 64:
+            raise ValueError("Invalid animation size: " + name)
         if path.stat().st_size != animation["bytes"]:
             raise ValueError("Size mismatch: " + name)
-        if hashlib.sha256(path.read_bytes()).hexdigest() != animation["sha256"]:
+        digest = hashlib.sha256()
+        with path.open("rb") as handle:
+            while chunk := handle.read(8192):
+                digest.update(chunk)
+        if digest.hexdigest() != animation["sha256"]:
             raise ValueError("Checksum mismatch: " + name)
         if name not in filenames:
             filenames.append(name)
+            sizes.append(animation["bytes"])
+    sizes.append(manifest_path.stat().st_size)
     root = Path(__file__).resolve().parents[1]
-    target = ":/sd/openbuddy/pets/" + pet_id + "/"
     command = [sys.executable, "-u", "-m", "mpremote", "connect", args.port,
-               "exec", "PACK_ID=%r; REPLACE=%r" % (pet_id, args.replace),
+               "exec", "PACK_ID=%r; REPLACE=%r; STORAGE=%r; PACK_SIZES=%r; MANIFEST_SHA256=%r" % (
+                   pet_id, args.replace, args.storage, sizes,
+                   hashlib.sha256(manifest_path.read_bytes()).hexdigest()),
                "+", "run", str(root / "tools/prepare_pet_sd.py")]
     for name in filenames + ["manifest.json"]:
-        command.extend(["+", "fs", "cp", str(folder / name), target + name])
+        command.extend(["+", "fs", "cp", str(folder / name), ":" + name])
     command.extend(["+", "run", str(root / "tools/verify_pet_sd.py")])
-    print("Installing pack on external SD only.", flush=True)
+    print("Installing pack (%s, %d bytes); BLE will disconnect during USB transfer." % (
+        args.storage, sum(sizes)), flush=True)
     try:
-        subprocess.run(command, check=True)
+        # Kill and reap a stalled mpremote before opening the same port for reset.
+        subprocess.run(command, timeout=timeout, check=True)
     finally:
-        # Also restart after an interrupted transfer; never leave the companion in REPL.
-        subprocess.run([sys.executable, "-m", "mpremote", "connect", args.port, "reset"],
-                       timeout=20, check=False)
+        reset_ok = False
+        try:
+            subprocess.run([sys.executable, "-m", "mpremote", "connect", args.port, "reset"],
+                           timeout=RESET_TIMEOUT, check=True)
+            reset_ok = True
+        except (OSError, subprocess.SubprocessError) as error:
+            # Preserve a transfer failure, including timeouts and Ctrl+C.
+            print("Warning: automatic reset failed (%s); press RST on the board." %
+                  type(error).__name__, file=sys.stderr)
+    if not reset_ok:
+        raise OSError("Pack installed, but the board could not be restarted")
 
 
 def main():
@@ -355,16 +396,25 @@ def main():
     conversion.add_argument("--output")
     conversion.add_argument("--frame-ms", type=int)
     conversion.add_argument("--force", action="store_true")
-    installation = commands.add_parser("install", help="Copy and verify a pack on the ESP32 SD via USB")
+    conversion.add_argument("--background", choices=("black", "dark"), default="black",
+                            help="Black for both boards (default); dark for older firmware only")
+    installation = commands.add_parser("install", help="Copy and verify a pack on ESP32 storage via USB")
     installation.add_argument("pack")
-    installation.add_argument("--port", default="COM9")
+    installation.add_argument("--port", default="auto")
+    installation.add_argument("--storage", choices=("auto", "sd", "internal"), default="auto",
+                               help="Follow the board preference by default; S3 v2 can use internal flash or TF")
     installation.add_argument("--replace", action="store_true", help="Replace an existing OpenBuddy pack")
+    installation.add_argument("--timeout", type=int, default=INSTALL_TIMEOUT, metavar="SECONDS",
+                              help="Maximum install duration (default: %(default)s seconds)")
     args = parser.parse_args()
     try:
         if args.command == "convert":
             convert_command(args)
         else:
             install(args)
+    except subprocess.TimeoutExpired as error:
+        parser.exit(1, "Installation timed out after %s seconds; mpremote was stopped. "
+                    "The pack may be incomplete; retry with --replace.\n" % error.timeout)
     except (OSError, ValueError, KeyError, subprocess.SubprocessError) as error:
         parser.exit(1, "Error: %s\n" % error)
 

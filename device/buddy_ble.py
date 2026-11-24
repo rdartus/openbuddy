@@ -9,8 +9,9 @@ import struct
 import time
 
 from buddy_protocol import (CHUNK_SIZE, DEVICE_NAME, FIRMWARE_VERSION,
-                            HEARTBEAT_MS, MAX_FRAME, RX_UUID, SERVICE_UUID,
-                            TX_UUID, VERSION, Decoder, encode, validate_command)
+                             HEARTBEAT_MS, MAX_FRAME, RX_UUID, SERVICE_UUID,
+                             TX_UUID, VERSION, Decoder, encode, fit_status, validate_command)
+from buddy_prompt import Prompt
 
 PAIR_WINDOW_MS = 60_000
 PAIR_CONFIRM_MS = 30_000
@@ -110,6 +111,7 @@ class BuddyBLE:
         self.state = "idle"
         self.label = ""
         self.info = ""
+        self.prompt = Prompt()
         self.protocol_mode = 1
         self.suspended = False
         self.decoder = Decoder()
@@ -251,6 +253,7 @@ class BuddyBLE:
             self.hid_until = None
             self.release_at = None
             self.last_seen = None
+            self.prompt.clear()
             self.decoder = Decoder()
             self.incoming = []
             self.outgoing = []
@@ -355,6 +358,13 @@ class BuddyBLE:
                 self.state = message["state"]
                 self.label = message.get("label", "")
                 self.info = message.get("info", "")
+                self.prompt.clear()
+            elif command == "prompt":
+                self.prompt.begin(message, self.state)
+            elif command == "part":
+                self.prompt.part(message)
+            elif command == "option":
+                self.prompt.option(message)
             elif command == "hid_arm":
                 if self.suspended:
                     raise ValueError("Keyboard is suspended")
@@ -366,6 +376,7 @@ class BuddyBLE:
                                  "orientation": "landscape", "firmware": FIRMWARE_VERSION})
                 if self.asset_status is not None:
                     response.update(self.asset_status())
+                fit_status(response)
             self._send(response)
         except (ValueError, TypeError) as error:
             self._send({"event": "error", "id": request_id, "message": str(error)[:80]})
@@ -373,6 +384,16 @@ class BuddyBLE:
     def online(self, now):
         return (self.secure and self.last_seen is not None
                 and time.ticks_diff(now, self.last_seen) < HEARTBEAT_MS)
+
+    def choose(self):
+        event = self.prompt.choose()
+        if event is not None and self.secure:
+            self._send(event)
+
+    def navigate(self, step):
+        event = self.prompt.navigate(step)
+        if event is not None and self.secure:
+            self._send(event)
 
     def tick(self, now):
         self.bonds.save()

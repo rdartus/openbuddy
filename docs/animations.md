@@ -1,16 +1,36 @@
-# Animations depuis la microSD
+# Animations depuis microSD ou flash interne
+
+Un **même pack RGB565 noir** fonctionne sur C6 et S3 : seul le stockage et
+l'échelle d'affichage dépendent du profil. Les animations peuvent aussi etre
+installees en **flash interne**, sous `/openbuddy/`, avec
+`pc.pet install ... --storage internal`. Le mode par defaut
+`--storage auto` choisit l'interne sur le S3 AMOLED v2 neuf, puis suit la
+destination mémorisée après une installation explicite avec `--storage sd` ou
+`--storage internal`. Il ne bascule pas sur la TF quand la flash est pleine ;
+il conserve la SD sur le C6. Une réserve de 256 Kio et les allocations du
+filesystem sont comprises dans le contrôle. Sur S3 v2, le lecteur accède
+uniquement à la destination choisie ; en mode TF, elle est montée en lecture
+seule sur un bus distinct du QSPI, et une carte absente ramène au robot avec
+de nouvelles tentatives de montage. Sur C6, le pack interne valide garde la
+priorité puis vient la SD.
+Les SHA-256 sont verifies pour
+les deux destinations. Voir le [guide S3](s3-amoled.md) pour l'installation complete.
 
 ## Fonctionnement
 
 Le firmware lit le pet **Super Saiyan Goku Combat**, partagé par
 **datpham** sur [Codex Pets](https://codex-pets.net/#/pets/super-saiyan-goku-combat).
-Le PC envoie uniquement un état BLE : les images restent sur la SD et continuent
-à s'animer même sans programme PC. `OFFLINE` utilise l'animation de repos.
+Le PC envoie uniquement un état USB ou BLE : les images restent sur le stockage
+choisi et continuent à s'animer même sans programme PC. `OFFLINE` utilise
+l'animation de repos.
 
-- Écran : paysage **320×172**, USB-C à gauche.
-- Personnage : **96×104**, à gauche ; état et libellé à droite.
+- Écran C6 : paysage **320×172**, USB-C à gauche ; S3 AMOLED : **456×280**.
+- Personnage : **96×104** sur C6, agrandi à **192×208** sur S3 ; état et libellé à droite.
 - Conversion à l'échelle 1/2, plus proche voisin, sans étirement ni lissage.
-- Transparence compositée sur le même fond sombre que l'interface : RGB `(8,12,20)`.
+- Transparence compositée sur **noir RGB `(0,0,0)` sur les deux profils**, y
+  compris les bords semi-transparents. Le manifeste est contrôlé à la lecture :
+  un ancien pack à fond `(8,12,20)` ne s'affiche plus tant qu'il n'est pas
+  reconverti et réinstallé. Sur C6, le noir ne coupe pas le rétroéclairage PWM.
 - Images **RGB565 big-endian** prêtes à envoyer à l'écran, sans décodeur WebP/PNG sur l'ESP32.
 - Un seul buffer de **19 968 octets** ; aucune spritesheet entière en RAM.
 
@@ -38,9 +58,10 @@ le service BLE. Au démarrage, le montage est tenté 3 fois ; tant que le pet es
 indisponible, le firmware retente toutes les 3 s (puis toutes les 30 s après 20
 essais) et redessine l'écran dès que la carte répond, sans redémarrage.
 
-## Bus SPI partagé
+## Bus SPI partagé sur C6
 
-`shared_spi.py` crée **un seul** objet `machine.SPI`, avec MOSI 6, SCLK 7 et MISO 5.
+Sur C6, `shared_spi.py` crée **un seul** objet `machine.SPI`, avec MOSI 6,
+SCLK 7 et MISO 5.
 Les deux CS sont relevés avant tout changement de fréquence :
 
 | Périphérique | CS | Fréquence |
@@ -56,20 +77,25 @@ callbacks BLE. Les attentes du pilote SD sont bornées.
 **Ne pas utiliser `machine.SDCard` en parallèle de l'écran** : il réserve le
 contrôleur SPI. Il est utilisé seulement par l'installateur USB, une fois la
 démo interrompue et le SPI écran libéré.
+Sur S3, le module QSPI natif garde SPI2_HOST ; la TF utilise son propre bus
+SPI3 et la lecture normale reste en lecture seule. La procédure d'installation
+est uniquement dans le [README Windows S3](../README-ESP32-S3-Windows.md).
 
 ## Conversion sur le PC
 
-Installer les outils optionnels de préparation d'assets. Le pont BLE sur le PC
-de travail n'a besoin que de `pc/requirements.txt`, pas de Pillow.
+Installer les outils optionnels de préparation d'assets après la préparation uv
+du dépôt. Le pont BLE sur le PC de travail n'a besoin que de
+`pc/requirements.txt`, pas de Pillow.
 
-```bash
-python -m pip install --user -r pc/requirements-assets.txt
-python -m pc.pet convert
+```powershell
+uv pip install --python .venv\Scripts\python.exe -r pc\requirements-assets.txt
+uv run python -m pc.pet convert
 ```
 
 Le convertisseur télécharge uniquement les métadonnées et l'image depuis le site,
 pas de code exécutable. Les fichiers d'origine vont dans `.cache/pets/`, le pack
-dans `build/pets/super-saiyan-goku-combat/`. Ces dossiers sont ignorés par Git.
+noir commun dans `build/pets/super-saiyan-goku-combat-black/`. Ces dossiers sont
+ignorés par Git ; le même dossier local peut être installé sur les deux cartes.
 
 `preview.png` permet de vérifier les premières images. Les sources, l'auteur et
 le hash SHA-256 de la spritesheet sont conservés dans le manifeste. La licence du
@@ -78,20 +104,29 @@ code du site ne vaut pas autorisation de redistribution de ses images ; voir
 
 Autre pet compatible avec l'atlas Codex Pets v1/v2 :
 
-```bash
-python -m pc.pet convert --pet another-pet-id
+```powershell
+uv run python -m pc.pet convert --pet another-pet-id
 ```
 
 Pour remplacer les fichiers générés, utiliser explicitement `--force`. Une option
 `--frame-ms` (100 à 2000) permet de changer la durée des images à la conversion.
+Le fond noir est le défaut pour **C6 et S3** et son nom local a le suffixe
+`-black` pour ne jamais écraser l'ancien pack sombre. Si un ancien pack sombre
+est déjà installé, le reconvertir dans **ce nouveau dossier** pour préserver sa copie
+locale, puis le réinstaller avec `--replace` depuis le parcours d'installation
+de la carte concernée. `--background dark` ne sert qu'aux anciens firmwares.
+Sur un C6 déjà équipé d'un pack sombre, déployer les nouveaux fichiers Python
+puis installer le pack noir : le robot de secours remplace temporairement l'ancien
+pet entre les deux opérations. Aucun reflashage du firmware C6 n'est nécessaire.
+Ne jamais reformater la SD pour changer la couleur du fond.
 
-## Installation sur la SD, sans reformatage
+## Installation sur la SD C6, sans reformatage
 
 La SD reste insérée dans l'ESP32. Vérifier le port série avant l'installation :
 
-```bash
-python -m serial.tools.list_ports -v
-python -m pc.pet install build/pets/super-saiyan-goku-combat --port COM9
+```powershell
+uv run python -m serial.tools.list_ports -v
+uv run python -m pc.pet install build/pets/super-saiyan-goku-combat-black --port COM9
 ```
 
 L'installateur :
@@ -105,8 +140,8 @@ L'installateur :
 
 Pour réinstaller un pack OpenBuddy connu, ou reprendre son transfert interrompu :
 
-```bash
-python -m pc.pet install build/pets/super-saiyan-goku-combat --port COM9 --replace
+```powershell
+uv run python -m pc.pet install build/pets/super-saiyan-goku-combat-black --port COM9 --replace
 ```
 
 Seuls les fichiers attendus dans le dossier du pack sont remplacés. Aucune

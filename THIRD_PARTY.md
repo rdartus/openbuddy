@@ -11,7 +11,7 @@ accompany copies of the plugin. Node built-in modules remain external.
 
 ## SPI SD card driver
 
-`c6lcd/sdcard_spi.py` is adapted from MicroPython's SPI SD card driver:
+`device/sdcard_spi.py` is adapted from MicroPython's SPI SD card driver:
 
 - Repository: <https://github.com/micropython/micropython-lib>
 - Path: `micropython/drivers/storage/sdcard/sdcard.py`, version 0.2.1

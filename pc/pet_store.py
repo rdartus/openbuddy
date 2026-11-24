@@ -8,9 +8,10 @@ import struct
 import sys
 import tempfile
 
-from c6lcd.buddy_protocol import STATES
+from device.buddy_protocol import STATES
 
-REQUIRED_STATES = STATES + ("offline", "pairing")
+# Standby is a bridge display state, not a new animation requirement.
+REQUIRED_STATES = tuple(state for state in STATES if state != "standby") + ("offline", "pairing")
 CHROMA_KEY_RGB = (1, 2, 3)  # Cannot be produced by RGB565 channel expansion.
 CHROMA_KEY_HEX = "#010203"
 BUILTIN_PET_ID = "builtin"

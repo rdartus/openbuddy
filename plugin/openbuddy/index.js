@@ -2854,15 +2854,120 @@ var Tracker = class {
     const result = (state, label) => ({ state, label, ...counters });
     if (this.permissions.size) return result("permission", `${this.permissions.size} approval(s) pending`);
     if (this.forms.size) return result("question", `${this.forms.size} response(s) pending`);
-    if (active.some((session) => session.tools.size)) return result("working", "Running tools");
-    if (active.some((session) => session.compacting)) return result("thinking", "Compacting context");
-    if (active.some((session) => session.text.size)) return result("working", "Writing response");
-    if (active.some((session) => session.retryAt > now)) return result("retry", "Retry scheduled");
+    if (active.some((session) => session.tools.size)) return result("working", active.length > 1 ? `${active.length} sessions: tools` : "Running tools");
+    if (active.some((session) => session.compacting)) return result("thinking", active.length > 1 ? `${active.length} sessions: compact` : "Compacting context");
+    if (active.some((session) => session.text.size)) return result("working", active.length > 1 ? `${active.length} sessions: writing` : "Writing response");
+    if (active.some((session) => session.retryAt > now)) {
+      const seconds = Math.ceil(Math.min(99, Math.max(...active.map((session) => session.retryAt - now))) / 1e3);
+      return result("retry", `Retry in ${seconds}s`);
+    }
     if (active.length) return result("thinking", active.length > 1 ? `${active.length} sessions active` : "OpenCode active");
     if (this.terminal && now - this.terminal.at < 8e3) return result(this.terminal.state, this.terminal.state === "error" ? "Execution failed" : "Response ready");
     return result("idle", "OpenCode ready");
   }
 };
+
+// src/requests.ts
+function display(text, limit) {
+  if (typeof text !== "string") return void 0;
+  const normalized = text.normalize("NFKD").replace(/[\u0300-\u036f]/g, "").replace(/[\u2018\u2019]/g, "'").replace(/(\d)\u00b0/g, "$1 deg");
+  if (/[\x00-\x1f\x7f]/.test(normalized)) return;
+  const ascii = normalized.replace(/[^\x20-\x7e]/g, "").trim();
+  return ascii && ascii.length <= limit ? { value: ascii, stripped: ascii !== normalized.trim() } : void 0;
+}
+function formRequest(form) {
+  if (!form || !/^[\w-]{1,48}$/.test(form.id) || typeof form.sessionID !== "string" || !Array.isArray(form.fields) || form.fields.length !== 1) return;
+  const field = form.fields[0];
+  if (field.type !== "string" && !(field.type === "multiselect" && field.maxItems === 1 && (field.minItems === void 0 || field.minItems <= 1)) || typeof field.key !== "string" || !field.key || field.hidden || field.when?.length || !Array.isArray(field.options) || field.options.length < 2 || field.options.length > 8) return;
+  const title = display([
+    form.title,
+    field.title,
+    field.description,
+    field.custom === true ? "Other answers: use OpenCode" : void 0
+  ].filter(Boolean).join(" - "), 600);
+  const options = field.options.map((option) => display(
+    [option.label, option.description].filter(Boolean).join(" - "),
+    120
+  ));
+  if (!title || options.some((option) => !option) || new Set(options.map((option) => option?.value)).size !== options.length || field.options.some((option) => typeof option.value !== "string") || new Set(field.options.map((option) => option.value)).size !== field.options.length) return;
+  const visibleTitle = (title.stripped || options.some((option) => option?.stripped) ? "TEXT FILTERED - " : "") + title.value;
+  if (visibleTitle.length > 600) return;
+  return {
+    kind: "form",
+    id: form.id,
+    sessionID: form.sessionID,
+    title: visibleTitle,
+    options: options.map((option) => option.value),
+    values: field.options.map((option) => option.value),
+    field: field.key,
+    answerType: field.type
+  };
+}
+function permissionRequest(request2) {
+  if (!request2 || !/^[\w-]{1,48}$/.test(request2.id) || typeof request2.sessionID !== "string" || typeof request2.action !== "string" || !Array.isArray(request2.resources) || !Array.isArray(request2.save) || request2.save.length === 0 || request2.resources.some((item) => typeof item !== "string") || request2.save.some((item) => typeof item !== "string")) return;
+  const raw = [
+    request2.action,
+    ...request2.resources,
+    request2.message,
+    `ALWAYS: ${request2.save.join(", ")}`
+  ].filter(Boolean).join(" - ");
+  const title = /^[\x20-\x7e]+$/.test(raw) && raw.length <= 600 ? raw : void 0;
+  if (!title) return;
+  return {
+    kind: "permission",
+    id: request2.id,
+    sessionID: request2.sessionID,
+    title,
+    options: ["REFUSE", "AUTORISER UNE FOIS", "TOUJOURS AUTORISER"],
+    values: ["reject", "once", "always"]
+  };
+}
+function preview(view, requests, selected) {
+  const kind = view.state === "permission" ? "permission" : view.state === "question" ? "form" : void 0;
+  const items = [...requests.values()].filter((item) => item.kind === kind);
+  if (items.length > 100) return;
+  const position = Math.max(0, items.findIndex((item) => `${item.kind}:${item.id}` === selected));
+  const request2 = items[position];
+  return request2 && {
+    kind: request2.kind,
+    id: request2.id,
+    title: request2.title,
+    options: request2.options,
+    position: position + 1,
+    total: items.length
+  };
+}
+function navigate(view, requests, id, step) {
+  const current = preview(view, requests, id);
+  if (!current || current.id !== id.split(":").slice(1).join(":") || current.total < 2 || ![-1, 1].includes(step)) return;
+  const items = [...requests.values()].filter((item2) => item2.kind === current.kind);
+  const item = items[(current.position - 1 + step + items.length) % items.length];
+  return `${item.kind}:${item.id}`;
+}
+async function submitChoice(item, index, client, signal2) {
+  if (!Number.isInteger(index) || index < 0 || index >= item.values.length) return false;
+  const request2 = { signal: signal2 };
+  if (item.kind === "form") {
+    const current = await client.session.form.get({ sessionID: item.sessionID, formID: item.id }, request2);
+    if (current.state.status !== "pending" || JSON.stringify(formRequest(current)) !== JSON.stringify(item)) {
+      return false;
+    }
+    await client.session.form.reply({
+      sessionID: item.sessionID,
+      formID: item.id,
+      answer: { [item.field]: item.answerType === "multiselect" ? [item.values[index]] : item.values[index] }
+    }, request2);
+  } else {
+    const current = await client.permission.get({ sessionID: item.sessionID, requestID: item.id }, request2);
+    if (JSON.stringify(permissionRequest(current)) !== JSON.stringify(item)) return false;
+    await client.permission.reply({
+      sessionID: item.sessionID,
+      requestID: item.id,
+      decision: item.values[index]
+    }, request2);
+  }
+  return true;
+}
 
 // src/transport.ts
 import { readFile as readFile3 } from "node:fs/promises";
@@ -2873,34 +2978,56 @@ function discoveryPath() {
   const root = process.platform === "win32" ? process.env.LOCALAPPDATA ?? join2(homedir2(), "AppData", "Local") : process.env.XDG_CACHE_HOME ?? join2(homedir2(), ".cache");
   return join2(root, "openbuddy", "bridge.json");
 }
-async function publish2(source, sequence, view, signal2) {
+async function publish2(source, sequence, view, signal2, choice) {
+  await bridgeRequest("POST", "/state", {
+    v: 1,
+    source,
+    sequence,
+    ...view,
+    label: view.label.slice(0, 24),
+    ...choice ? { choice } : {}
+  }, signal2);
+}
+async function nextChoice(source, signal2) {
+  const result = await bridgeRequest("GET", `/choice?source=${encodeURIComponent(source)}`, void 0, signal2);
+  return { touch: result.touch === true, choice: result.choice ?? void 0, navigate: result.navigate ?? void 0 };
+}
+async function bridgeRequest(method, path, input, signal2) {
   const text = await readFile3(discoveryPath(), "utf8");
   if (text.length > 1024) throw new Error("Invalid bridge discovery");
   const target = JSON.parse(text);
   if (target.product !== "openbuddy" || target.v !== 1 || !Number.isInteger(target.port) || target.port < 1024 || target.port > 65535 || !/^[a-f0-9]{64}$/.test(target.token)) {
     throw new Error("Invalid bridge discovery");
   }
-  const body = JSON.stringify({ v: 1, source, sequence, ...view, label: view.label.slice(0, 24) });
-  await new Promise((resolve, reject) => {
+  const body = input === void 0 ? void 0 : JSON.stringify(input);
+  return await new Promise((resolve, reject) => {
     const outgoing = request({
       hostname: "127.0.0.1",
       port: target.port,
-      path: "/state",
-      method: "POST",
+      path,
+      method,
       agent: false,
-      headers: {
-        "Authorization": `Bearer ${target.token}`,
+      headers: { "Authorization": `Bearer ${target.token}`, ...body === void 0 ? {} : {
         "Content-Type": "application/json",
         "Content-Length": Buffer.byteLength(body)
-      },
+      } },
       signal: AbortSignal.any([signal2, AbortSignal.timeout(1500)])
     }, (response) => {
+      let text2 = "";
       response.on("error", reject);
       response.on("end", () => {
-        if (response.statusCode === 200) resolve();
-        else reject(new Error("Bridge rejected state"));
+        if (response.statusCode === 200) {
+          try {
+            resolve(JSON.parse(text2));
+          } catch (error) {
+            reject(error);
+          }
+        } else reject(new Error("Bridge rejected request"));
       });
-      response.resume();
+      response.on("data", (chunk) => {
+        text2 += chunk;
+        if (text2.length > 4096) response.destroy();
+      });
     });
     outgoing.on("error", reject);
     outgoing.end(body);
@@ -2934,6 +3061,7 @@ var EVENTS = [
   "form.replied",
   "form.cancelled"
 ];
+var STALE_BUSY_MS = 30 * 6e4;
 function directory(value) {
   const result = normalize(value).replace(/[\\/]+$/, "");
   return process.platform === "win32" ? result.toLowerCase() : result;
@@ -2946,6 +3074,9 @@ var index_default = {
     const source = randomUUID();
     const home = directory(ctx.location.directory);
     let tracker = new Tracker();
+    let requests = /* @__PURE__ */ new Map();
+    let touchAvailable = false;
+    let selectedRequest;
     let synchronized = false;
     let replay;
     let replayOverflow = false;
@@ -2976,7 +3107,9 @@ var index_default = {
             archived: false
           }, { signal: AbortSignal.any([signal2, AbortSignal.timeout(5e3)]) });
           for (const session of page.data) {
-            sessions.push({ id: session.id, busy: (session.time.busy ?? 0) > (session.time.idle ?? 0) });
+            const flagged = (session.time.busy ?? 0) > (session.time.idle ?? 0);
+            const recent = Date.now() - Math.max(session.time.updated ?? 0, session.time.busy ?? 0) < STALE_BUSY_MS;
+            sessions.push({ id: session.id, busy: flagged && (recent || tracker.sessions.get(session.id)?.busy === true) });
           }
           cursor = page.cursor.next ?? void 0;
           if (!cursor) break;
@@ -2988,6 +3121,15 @@ var index_default = {
         if (!Array.isArray(permissions.data) || !Array.isArray(forms.data)) throw new Error("Invalid pending-request snapshot");
         const next = new Tracker();
         next.seed({ sessions, permissions: permissions.data, forms: forms.data });
+        const fresh = /* @__PURE__ */ new Map();
+        for (const item of permissions.data) {
+          const value = permissionRequest(item);
+          if (value) fresh.set("permission:" + value.id, value);
+        }
+        for (const item of forms.data) {
+          const value = formRequest(item);
+          if (value) fresh.set("form:" + value.id, value);
+        }
         for (const [id, session] of next.sessions) {
           const current = tracker.sessions.get(id);
           if (session.busy && current?.busy) {
@@ -3000,8 +3142,17 @@ var index_default = {
         }
         for (const item of replay ?? []) next.apply(item.event, item.at);
         if (replayOverflow) throw new Error("Too many events during synchronization");
+        for (const key of fresh.keys()) {
+          const [kind, id] = key.split(":");
+          if (!(kind === "form" ? next.forms : next.permissions).has(id)) fresh.delete(key);
+        }
+        for (const [key, value] of requests) {
+          const pending = value.kind === "form" ? next.forms : next.permissions;
+          if (!fresh.has(key) && pending.get(value.id) === value.sessionID) fresh.set(key, value);
+        }
         next.terminal ??= tracker.terminal;
         tracker = next;
+        requests = fresh;
         synchronized = true;
       } catch {
         if (!signal2.aborted && Date.now() - lastWarning > 6e4) {
@@ -3032,6 +3183,21 @@ var index_default = {
             } };
             const at = Date.now();
             tracker.apply(minimal, at);
+            if (event.type === "form.created") {
+              const value = formRequest(data.form);
+              if (value) requests.set("form:" + value.id, value);
+            } else if (event.type === "permission.asked") {
+              const value = permissionRequest(data);
+              if (value) requests.set("permission:" + value.id, value);
+            } else if (event.type === "form.replied" || event.type === "form.cancelled") {
+              requests.delete("form:" + data.id);
+            } else if (event.type === "permission.replied") {
+              requests.delete("permission:" + data.requestID);
+            }
+            for (const [key, request2] of requests) {
+              const pending = request2.kind === "form" ? tracker.forms : tracker.permissions;
+              if (pending.get(request2.id) !== request2.sessionID) requests.delete(key);
+            }
             if (replay) {
               if (replay.length < 2048) replay.push({ event: minimal, at });
               else replayOverflow = true;
@@ -3049,10 +3215,11 @@ var index_default = {
     const sender = setInterval(() => {
       if (sending || !synchronized || signal2.aborted) return;
       const view = tracker.view();
-      const serialized = JSON.stringify(view);
+      const choice = touchAvailable ? preview(view, requests, selectedRequest) : void 0;
+      const serialized = JSON.stringify([view, choice]);
       if (serialized === lastView && Date.now() - lastSent < 3e3) return;
       sending = true;
-      void publish2(source, ++sequence, view, signal2).then(() => {
+      void publish2(source, ++sequence, view, signal2, choice).then(() => {
         lastSent = Date.now();
         lastView = serialized;
       }).catch(() => {
@@ -3062,6 +3229,38 @@ var index_default = {
         sending = false;
       });
     }, 250);
+    const answers = (async () => {
+      while (!signal2.aborted) {
+        try {
+          const result = await nextChoice(source, signal2);
+          touchAvailable = result.touch;
+          if (result.navigate && synchronized) {
+            const current = preview(tracker.view(), requests, selectedRequest);
+            if (current && current.kind === result.navigate.kind && current.id === result.navigate.id) {
+              selectedRequest = navigate(tracker.view(), requests, `${current.kind}:${current.id}`, result.navigate.step);
+            }
+          }
+          const selected = result.choice;
+          if (selected && synchronized) {
+            const item = requests.get(selected.kind + ":" + selected.id);
+            const pending = selected.kind === "form" ? tracker.forms : tracker.permissions;
+            if (item && pending.get(item.id) === item.sessionID && Number.isInteger(selected.index) && selected.index >= 0 && selected.index < item.values.length) {
+              const endpoint = await Service.discover({ version: ctx.app.version });
+              if (!endpoint) throw new Error("OpenCode service is unavailable");
+              const client = exports_client.make({ baseUrl: endpoint.url, headers: Service.headers(endpoint) });
+              const call = AbortSignal.any([signal2, AbortSignal.timeout(5e3)]);
+              if ((await client.server.info({ signal: call })).pid !== process.pid) {
+                throw new Error("Wrong OpenCode service");
+              }
+              await submitChoice(item, selected.index, client, call);
+            }
+          }
+        } catch {
+        }
+        const waiting = tracker.forms.size > 0 || tracker.permissions.size > 0;
+        await new Promise((resolve) => setTimeout(resolve, touchAvailable && waiting ? 300 : 3e3));
+      }
+    })();
     const resync = setInterval(() => {
       void synchronize();
     }, 15e3);
@@ -3071,6 +3270,7 @@ var index_default = {
       clearInterval(sender);
       clearInterval(resync);
       await events;
+      await answers;
     };
   }
 };

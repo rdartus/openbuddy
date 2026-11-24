@@ -85,11 +85,11 @@ class DesktopNotifier:
                 self.warned = True
             return False
 
-    def observe(self, state):
+    def observe(self, state, notify=True):
         if state == self.previous:
             return False
         self.previous = state
-        if not self.enabled or state not in MESSAGES:
+        if not notify or not self.enabled or state not in MESSAGES:
             return False
         now = self.clock()
         if now - self.last_posted.get(state, -float("inf")) < 2:

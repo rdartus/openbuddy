@@ -6,7 +6,7 @@ import types
 import unittest
 from unittest.mock import patch
 
-from c6lcd.buddy_protocol import Decoder, encode
+from device.buddy_protocol import Decoder, encode
 from pc.buddy import SERIAL_VID, UsbLink, find_serial_port
 
 

@@ -56,11 +56,27 @@ class RegistryTests(unittest.TestCase):
 
     def test_bad_labels_counts_and_states_are_rejected(self):
         for fields in ({"label": "x" * 25}, {"label": "line\nbreak"},
-                       {"pending_forms": True}, {"state": "hid_arm"}, {"sequence": -1}):
+                       {"pending_forms": True}, {"state": "hid_arm"}, {"state": "standby"},
+                       {"sequence": -1}):
             value = message()
             value.update(fields)
             with self.subTest(fields=fields), self.assertRaises(ValueError):
                 self.registry.update(value)
+
+    def test_only_a_current_complete_choice_is_exposed(self):
+        value = message(state="question")
+        value["pending_forms"] = 1
+        value["choice"] = {"kind": "form", "id": "frm_1", "title": "Pick a language",
+                           "options": ["Python", "Rust"]}
+        self.registry.update(value)
+        self.assertEqual(self.registry.current()["choice"], value["choice"])
+        self.now = LEASE_SECONDS
+        self.assertIsNone(self.registry.current())
+        for choice in ({**value["choice"], "title": "x\nspoof"},
+                       {**value["choice"], "options": ["only one"]},
+                       {**value["choice"], "kind": "permission"}):
+            with self.subTest(choice=choice), self.assertRaises(ValueError):
+                self.registry.update({**value, "sequence": 2, "choice": choice})
 
 
 class HTTPTests(unittest.IsolatedAsyncioTestCase):
@@ -94,7 +110,8 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((status, response), (200, {"accepted": True}))
         status, health = await self.request("GET", "/health")
         self.assertEqual(health["state"]["state"], "thinking")
-        self.assertTrue(health["read_only"])
+        self.assertFalse(health["read_only"])
+        self.assertEqual(health["display_request"], "none")
 
     async def test_unauthorized_and_browser_origin_are_rejected(self):
         self.assertEqual((await self.request(token="wrong"))[0], 401)
@@ -187,7 +204,125 @@ class HTTPTests(unittest.IsolatedAsyncioTestCase):
     async def test_control_ignores_environment_proxies_for_loopback(self):
         with patch.dict("os.environ", {"http_proxy": "http://127.0.0.1:1", "HTTP_PROXY": "http://127.0.0.1:1", "no_proxy": "", "NO_PROXY": ""}):
             health = await asyncio.to_thread(control, self.path, "health")
-        self.assertTrue(health["read_only"])
+        self.assertFalse(health["read_only"])
+
+    async def test_choice_is_delivered_once_to_the_exact_live_source(self):
+        self.bridge.touch_connected = True
+        value = message(state="permission")
+        value["pending_permissions"] = 1
+        value["choice"] = {"kind": "permission", "id": "per_1",
+                           "title": "Edit file - ALWAYS: *.py", "options": ["REFUSE", "ONCE", "ALWAYS"]}
+        self.assertEqual((await self.request(body=value))[0], 200)
+        self.bridge.device_event({"v": 1, "event": "choice", "kind": "permission", "token": "per_1", "index": 2})
+        status, response = await self.request("GET", "/choice?source=other")
+        self.assertEqual((status, response), (200, {"choice": None, "touch": True}))
+        status, response = await self.request("GET", "/choice?source=project-a")
+        self.assertEqual(response["choice"], {"kind": "permission", "id": "per_1", "index": 2})
+        self.assertEqual((await self.request("GET", "/choice?source=project-a"))[1], {"choice": None, "touch": True})
+        self.bridge.device_event({"v": 1, "event": "choice", "kind": "permission", "token": "wrong", "index": 2})
+        self.assertEqual((await self.request("GET", "/choice?source=project-a"))[1], {"choice": None, "touch": True})
+        health = (await self.request("GET", "/health"))[1]
+        self.assertNotIn("ALWAYS:", json.dumps(health))
+        self.assertEqual(health["display_request"], "available")
+
+    async def test_unrepresentable_waiting_form_is_explicitly_answered_in_opencode(self):
+        self.bridge.touch_connected = True
+        value = message(state="question")
+        value["pending_forms"] = 1
+        await self.request(body=value)
+        self.assertEqual(self.bridge.health()["display_request"], "open_in_opencode")
+        class FakeLink:
+            def __init__(self):
+                self.requests = []
+                self.disconnected = asyncio.Event()
+
+            async def request(self, command, **fields):
+                self.requests.append((command, fields))
+
+        link = FakeLink()
+        task = asyncio.create_task(self.bridge.deliver_states(link, touch=True))
+        try:
+            await asyncio.sleep(0.35)
+            self.assertIn(("state", {"state": "question", "label": "Answer in OpenCode"}), link.requests)
+            self.assertNotIn("prompt", [command for command, _ in link.requests])
+        finally:
+            link.disconnected.set()
+            await task
+
+    async def test_c6_or_disconnected_touch_drops_choice_text(self):
+        value = message(state="permission")
+        value["pending_permissions"] = 1
+        value["choice"] = {"kind": "permission", "id": "per_2",
+                           "title": "Private path - ALWAYS: *.py", "options": ["REFUSE", "ONCE", "ALWAYS"]}
+        self.assertEqual((await self.request(body=value))[0], 200)
+        self.assertNotIn("choice", self.bridge.registry.current())
+        self.bridge.device_event({"v": 1, "event": "choice", "kind": "permission", "token": "per_2", "index": 2})
+        self.assertEqual((await self.request("GET", "/choice?source=project-a"))[1],
+                          {"choice": None, "touch": False})
+
+    async def test_navigation_clears_old_prompt_until_plugin_publishes_next(self):
+        self.bridge.touch_connected = True
+        value = message(state="permission")
+        value["pending_permissions"] = 2
+        value["choice"] = {"kind": "permission", "id": "per_1", "title": "Read a.py - ALWAYS: *.py",
+                           "options": ["REFUSE", "ONCE", "ALWAYS"], "position": 1, "total": 2}
+        self.assertEqual((await self.request(body=value))[0], 200)
+        self.bridge.device_event({"v": 1, "event": "navigate", "kind": "permission", "token": "per_1", "step": 1})
+        self.assertNotIn("choice", self.bridge.current_view())
+        self.bridge.device_event({"v": 1, "event": "choice", "kind": "permission", "token": "per_1", "index": 2})
+        self.assertIsNone(self.bridge.pending_choice)
+        result = (await self.request("GET", "/choice?source=project-a"))[1]
+        self.assertEqual(result["navigate"], {"kind": "permission", "id": "per_1", "step": 1})
+        self.assertNotIn("navigate", (await self.request("GET", "/choice?source=project-a"))[1])
+        value["choice"] = {**value["choice"], "id": "per_2", "position": 2}
+        value["sequence"] = 2
+        self.assertEqual((await self.request(body=value))[0], 200)
+        self.assertEqual(self.bridge.current_view()["choice"]["id"], "per_2")
+        self.assertIsNone(self.bridge.pending_navigation)
+
+    async def test_manual_preview_discards_choices_and_ignores_touch(self):
+        self.bridge.touch_connected = True
+        value = message(state="permission")
+        value["pending_permissions"] = 1
+        value["choice"] = {"kind": "permission", "id": "per_1", "title": "Edit a.py",
+                           "options": ["REFUSE", "ONCE", "ALWAYS"]}
+        await self.request(body=value)
+        event = {"v": 1, "event": "choice", "kind": "permission", "token": "per_1", "index": 2}
+        self.bridge.device_event(event)
+        self.assertIsNotNone(self.bridge.pending_choice)
+        await self.bridge.set_manual_state({"state": "permission", "label": "Demo"})
+        self.assertIsNone(self.bridge.pending_choice)
+        self.bridge.device_event(event)
+        self.assertIsNone(self.bridge.pending_choice)
+        result = (await self.request("GET", "/choice?source=project-a"))[1]
+        self.assertIsNone(result["choice"])
+
+    async def test_switching_to_virtual_mode_clears_touch_and_pending_reply(self):
+        self.bridge.touch_connected = True
+        self.bridge.pending_choice = {"source": "project-a", "kind": "permission", "id": "per_1", "index": 2}
+        self.bridge.pending_navigation = {"source": "project-a", "kind": "permission", "id": "per_1"}
+        await self.bridge._restart_transport_worker()
+        self.assertFalse(self.bridge.touch_connected)
+        self.assertIsNone(self.bridge.pending_choice)
+        self.assertIsNone(self.bridge.pending_navigation)
+
+    async def test_standby_is_only_sent_to_new_firmware(self):
+        class FakeLink:
+            def __init__(self):
+                self.requests = []
+                self.disconnected = asyncio.Event()
+
+            async def request(self, command, **fields):
+                self.requests.append((command, fields))
+
+        link = FakeLink()
+        task = asyncio.create_task(self.bridge.deliver_states(link, standby=True))
+        try:
+            await asyncio.sleep(0.35)
+            self.assertIn(("state", {"state": "standby", "label": "Waiting for OpenCode"}), link.requests)
+        finally:
+            link.disconnected.set()
+            await task
 
     def test_idle_becomes_offline_when_no_interactive_opencode_client_is_open(self):
         self.assertTrue(is_background_service_command(
@@ -271,8 +406,12 @@ class EnsureTests(unittest.TestCase):
         self.assertEqual(
             cmd_custom,
             ["/venv/python", "-P", "-m", "pc.opencode", "run",
-             "--no-device", "--mute", "--web-port", "9000", "--overlay"],
+              "--no-device", "--mute", "--web-port", "9000", "--overlay"],
         )
+
+    def test_ensure_forwards_quiet_hours_configuration(self):
+        cmd = build_run_command(self._args(attention_config="quiet.json"), python_executable="python")
+        self.assertEqual(cmd[-2:], ["--attention-config", "quiet.json"])
 
     def test_ensure_does_not_spawn_when_bridge_is_already_running(self):
         spawned = []

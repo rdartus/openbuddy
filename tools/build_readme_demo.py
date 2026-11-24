@@ -136,13 +136,13 @@ def firmware_runtime():
     # Import the real UI/player without importing machine, SPI or Bluetooth.
     if str(ROOT) not in sys.path:
         sys.path.insert(0, str(ROOT))
-    from c6lcd import board_config, buddy_protocol
+    from device import board_config, buddy_protocol
 
     driver = ModuleType("st7789")
     driver.rgb = rgb565
 
     def module(name):
-        spec = importlib.util.spec_from_file_location("_demo_" + name, ROOT / "c6lcd" / (name + ".py"))
+        spec = importlib.util.spec_from_file_location("_demo_" + name, ROOT / "device" / (name + ".py"))
         result = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(result)
         return result

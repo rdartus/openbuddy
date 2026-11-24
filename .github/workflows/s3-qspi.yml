@@ -1,0 +1,144 @@
+name: Build S3 AMOLED v2 QSPI firmware
+
+on:
+  workflow_dispatch:
+  pull_request:
+  push:
+    branches: ['**']
+    tags: ['s3-qspi-*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: s3-qspi-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      # Use the PR head, not GitHub's synthetic merge commit: the packaged
+      # firmware must match a commit users can check out on their branch.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: '3.13'
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: '25'
+      - name: Install dependencies
+        run: |
+          python -m pip install -r pc/requirements.txt -r pc/requirements-assets.txt -r pc/requirements-dev.txt
+          npm --prefix integration/openbuddy ci --ignore-scripts
+      - name: Check deployable files with MicroPython 1.29
+        run: python -m tools.check_micropython
+      - name: Build and verify plugin
+        run: |
+          npm --prefix integration/openbuddy run build
+          cmp integration/openbuddy/dist/index.js plugin/openbuddy/index.js
+          cmp integration/openbuddy/dist/package.json plugin/openbuddy/package.json
+          cmp integration/openbuddy/dist/LICENSES.txt plugin/openbuddy/LICENSES.txt
+          npm --prefix integration/openbuddy test
+          npm --prefix integration/openbuddy run typecheck
+      - name: Test Python deployment and firmware package
+        run: python -m unittest discover -s tests -v
+      - name: Smoke test on MicroPython 1.29 Unix port
+        run: |
+          git clone --depth 1 --branch v1.29.0 https://github.com/micropython/micropython.git /tmp/micropython
+          test "$(git -C /tmp/micropython rev-parse HEAD)" = '0fd6c573ea815774668bbb16b8e197c8822368b2'
+          make -C /tmp/micropython/ports/unix submodules
+          make -C /tmp/micropython/ports/unix MICROPY_PY_FFI=0 MICROPY_PY_SSL=0 -j2
+          MICROPYPATH="$PWD/device" /tmp/micropython/ports/unix/build-standard/micropython tests/micropython_smoke.py
+
+  build:
+    needs: tests
+    runs-on: ubuntu-24.04
+    container: espressif/idf:v5.5.2
+    timeout-minutes: 45
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Configure Git safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Fetch MicroPython sources
+        run: git clone --depth 1 --branch v1.29.0 https://github.com/micropython/micropython.git /tmp/micropython
+      - name: Test native transport on host
+        run: make -f tests/native_qspi/Makefile MICROPYTHON=/tmp/micropython
+      - name: Check native transport against ESP-IDF headers
+        run: MICROPYTHON=/tmp/micropython IDF_PATH=/opt/esp/idf sh tests/native_qspi/check_idf_headers.sh
+      - name: Build firmware and package matching Python files
+        run: |
+          . /opt/esp/idf/export.sh
+          bash tools/build_s3_qspi.sh /tmp/micropython
+      - name: Verify artifact provenance and checksums
+        env:
+          EXPECTED_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          build = json.loads(Path('dist/s3-qspi/BUILD.json').read_text())
+          assert build['openbuddy_commit'] == os.environ['EXPECTED_COMMIT'], 'Build commit mismatch'
+          assert not build['openbuddy_dirty'], 'Build includes uncommitted sources'
+          PY
+          cd dist/s3-qspi
+          sha256sum --check SHA256SUMS.txt
+      - name: Summarize internal flash capacity
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+          build = json.loads(Path('dist/s3-qspi/BUILD.json').read_text())
+          budget = build['flash_budget']
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('## Flash interne S3 v2 — pet sans TF\n\n')
+              summary.write('| Mesure | Octets |\n|---|---:|\n')
+              for key in ('app_bytes', 'app_partition_bytes', 'vfs_bytes', 'python_budget_bytes',
+                          'pet_pixel_bytes', 'pet_budget_bytes', 'reserve_bytes',
+                          'required_vfs_bytes', 'spare_vfs_bytes'):
+                  summary.write(f'| `{key}` | {budget[key]} |\n')
+              summary.write('\nBudget VFS : fichiers Python + **deux packs** (remplacement inclus) '
+                            '+ métadonnées/allocations + réserve de 256 Kio. '
+                            'L’installation vérifie aussi l’espace libre réel sur la carte.\n')
+              summary.write(f'\nUSB : **{build["usb_backend"]}** '
+                            f'(`{build["usb_vid"]:04x}:{build["usb_pid"]:04x}`), '
+                            'sans bascule vers TinyUSB/OTG au démarrage.\n')
+          PY
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: openbuddy-s3-amoled-qspi
+          path: dist/s3-qspi/*
+          if-no-files-found: error
+          retention-days: 30
+
+  prerelease:
+    if: startsWith(github.ref, 'refs/tags/s3-qspi-')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: openbuddy-s3-amoled-qspi
+          path: dist/s3-qspi
+      - name: Publish experimental prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+          COMMIT: ${{ github.sha }}
+        run: |
+          gh release create "$TAG" dist/s3-qspi/* --verify-tag --target "$COMMIT" --prerelease \
+            --title "S3 AMOLED v2 QSPI $TAG (experimental)" \
+            --notes "Waveshare S3 Touch AMOLED 1.64 v2 (CS GPIO46), 16 MiB flash, octal PSRAM. Experimental MicroPython 1.29.0 / ESP-IDF 5.5.2 with native QSPI API v4 and QMI8658 auto orientation. Pet storage defaults to internal flash, with explicitly selected FAT32 TF support; install artwork separately via pc.pet. BUILD.json includes checked application/VFS budgets. Hardware validation required. Download the matching source ZIP and follow its Windows uv instructions. No pet artwork is included."

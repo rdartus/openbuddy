@@ -6,7 +6,7 @@ import json
 import sys
 import threading
 
-from c6lcd.buddy_protocol import STATES, VERSION, validate_command
+from device.buddy_protocol import STATES, VERSION, validate_command
 from pc.pet_store import read_clip_bytes, safe_name
 
 DEFAULT_WEB_PORT = 8765
